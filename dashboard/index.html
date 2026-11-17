@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Token Radar — Pre-Token Protocol Board</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="site-header">
+      <div class="header-top">
+        <div class="header-titles">
+          <div class="eyebrow">MAKE.FUN · TOKEN-RADAR-01</div>
+          <h1>Token Radar</h1>
+          <p class="subhead">Ranks pre-token protocols by implied valuation derived from frozen snapshot TVL, sector benchmark multiples, and protocol adjustment factors.</p>
+        </div>
+        <div class="header-meta">
+          <div id="board-meta" class="meta-line">Snapshot 2026-11-14 · 120 protocols (40 Watchlist · 80 Discovery)</div>
+        </div>
+      </div>
+
+      <section class="formula-strip" aria-label="How the value is built">
+        <div class="formula-heading">
+          <span class="formula-label">HOW THE VALUE IS BUILT</span>
+          <code class="formula-eq">implied = TVL × base × scale × growth × age × chains</code>
+        </div>
+        <div class="formula-chips">
+          <div class="formula-chip">
+            <span class="chip-factor">base (bm)</span>
+            <span class="chip-source">Sector mcap/TVL median</span>
+          </div>
+          <div class="formula-chip">
+            <span class="chip-factor">scale (sf)</span>
+            <span class="chip-source">TVL scale factor</span>
+          </div>
+          <div class="formula-chip">
+            <span class="chip-factor">growth (gf)</span>
+            <span class="chip-source">7-day momentum</span>
+          </div>
+          <div class="formula-chip">
+            <span class="chip-factor">age (af)</span>
+            <span class="chip-source">No-token age maturity</span>
+          </div>
+          <div class="formula-chip">
+            <span class="chip-factor">chains (cf)</span>
+            <span class="chip-source">Multi-chain breadth</span>
+          </div>
+        </div>
+      </section>
+    </header>
+
+    <section class="controls-bar" aria-label="Board controls">
+      <div class="tabs-group" role="tablist">
+        <button id="tab-board" class="tab-btn active" type="button" role="tab" aria-selected="true" data-tab="board">
+          Pre-Token Board
+        </button>
+        <button id="tab-comps" class="tab-btn" type="button" role="tab" aria-selected="false" data-tab="comps">
+          Valuation Comps <span class="tab-badge">Excluded</span>
+        </button>
+      </div>
+
+      <div id="board-controls" class="filter-row">
+        <div class="segmented-filters" role="group" aria-label="Tier filter">
+          <button id="filter-all" class="filter-btn active" type="button" data-filter="all">All</button>
+          <button id="filter-watchlist" class="filter-btn" type="button" data-filter="watchlist">Watchlist</button>
+          <button id="filter-discovery" class="filter-btn" type="button" data-filter="discovery">Discovery</button>
+        </div>
+
+        <label class="control-field" for="category-select">
+          <span class="visually-hidden">Category</span>
+          <select id="category-select" aria-label="Filter by category">
+            <option value="all">All Categories</option>
+          </select>
+        </label>
+
+        <label class="control-field search-field" for="search-input">
+          <span class="visually-hidden">Search protocol name or slug</span>
+          <input id="search-input" type="search" placeholder="Search name or slug..." autocomplete="off">
+        </label>
+      </div>
+    </section>
+
+    <main class="main-stage">
+      <section id="board-section" class="table-section" aria-label="Pre-Token Protocol Board">
+        <div class="table-wrap">
+          <table id="board-table" class="data-table board-table">
+            <thead>
+              <tr>
+                <th class="col-rank sortable" data-sort="r" scope="col">Rank</th>
+                <th class="col-protocol sortable" data-sort="n" scope="col">Protocol</th>
+                <th class="col-category sortable" data-sort="c" scope="col">Category</th>
+                <th class="col-num sortable" data-sort="t" scope="col">TVL</th>
+                <th class="col-num sortable" data-sort="g" scope="col">7d %</th>
+                <th class="col-num sortable" data-sort="d" scope="col">Age</th>
+                <th class="col-num sortable" data-sort="k" scope="col">Chains</th>
+                <th class="col-num col-implied sortable active-sort" data-sort="v" scope="col">Implied Value</th>
+              </tr>
+            </thead>
+            <tbody id="board-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="comps-section" class="table-section" aria-label="Excluded Valuation Comps" hidden>
+        <div class="comps-banner">
+          <div class="comps-note">
+            <span class="excluded-label">EXCLUDED · VALUATION COMPS</span>
+            <span>Tokenized benchmark protocols used to calibrate sector mcap/TVL base multiples. Strictly excluded from the Pre-Token ranking.</span>
+          </div>
+          <div id="comps-meta" class="meta-line"></div>
+        </div>
+        <div class="table-wrap">
+          <table id="comps-table" class="data-table comps-table">
+            <thead>
+              <tr>
+                <th class="col-protocol" data-sort="n" scope="col">Protocol</th>
+                <th class="col-category" data-sort="c" scope="col">Category</th>
+                <th class="col-num" data-sort="t" scope="col">TVL</th>
+                <th class="col-num" data-sort="m" scope="col">Market Cap</th>
+                <th class="col-num" data-sort="ratio" scope="col">mcap/TVL</th>
+              </tr>
+            </thead>
+            <tbody id="comps-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <aside id="detail" class="detail-drawer" aria-label="Protocol valuation detail" hidden>
+      <div class="detail-header">
+        <div>
+          <h2 id="detail-title">Protocol Detail</h2>
+          <div class="detail-sub" id="detail-sub"></div>
+        </div>
+        <button type="button" id="detail-close" class="detail-close" aria-label="Close detail drawer">×</button>
+      </div>
+      <div class="detail-metrics" id="detail-metrics"></div>
+      <div class="detail-section">
+        <h3>Valuation Derivation</h3>
+        <div class="derivation-formula" id="derivation-formula"></div>
+        <div class="derivation-lines" id="derivation-lines"></div>
+      </div>
+      <div class="detail-section" id="detail-comps-section">
+        <h3>Sector Benchmark &amp; Comps</h3>
+        <div id="detail-sector-comps"></div>
+      </div>
+      <div class="detail-section">
+        <h3>Actionable Farm Playbook</h3>
+        <ol id="detail-farm"></ol>
+      </div>
+    </aside>
+
+    <footer class="site-footer">
+      <span>Frozen snapshot as of 2026-11-14 · Implied values are comparative model outputs, not price predictions · Farm steps are educational research notes, not financial advice.</span>
+    </footer>
+  </div>
+
+  <script src="z-data.js"></script>
+  <script src="ui.js"></script>
+</body>
+</html>
