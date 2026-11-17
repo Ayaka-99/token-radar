@@ -7,152 +7,180 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="app-shell">
-    <header class="site-header">
-      <div class="header-top">
-        <div class="header-titles">
-          <div class="eyebrow">MAKE.FUN · TOKEN-RADAR-01</div>
-          <h1>Token Radar</h1>
-          <p class="subhead">Ranks pre-token protocols by implied valuation derived from frozen snapshot TVL, sector benchmark multiples, and protocol adjustment factors.</p>
-        </div>
-        <div class="header-meta">
-          <div id="board-meta" class="meta-line">Snapshot 2026-11-14 · 120 protocols (40 Watchlist · 80 Discovery)</div>
-        </div>
+  <div class="sheet">
+    <header class="masthead">
+      <div class="masthead-title">
+        <h1>Token Radar</h1>
+        <p class="lede">Protocols that record no token yet, ranked by what their launch would be worth on today's record, each with a costed plan to farm it.</p>
       </div>
 
-      <section class="formula-strip" aria-label="How the value is built">
-        <div class="formula-heading">
-          <span class="formula-label">HOW THE VALUE IS BUILT</span>
-          <code class="formula-eq">implied = TVL × base × scale × growth × age × chains</code>
+      <dl class="facts" aria-label="Snapshot summary">
+        <div class="fact">
+          <dt>Snapshot</dt>
+          <dd id="fact-snapshot">—</dd>
         </div>
-        <div class="formula-chips">
-          <div class="formula-chip">
-            <span class="chip-factor">base (bm)</span>
-            <span class="chip-source">Sector mcap/TVL median</span>
-          </div>
-          <div class="formula-chip">
-            <span class="chip-factor">scale (sf)</span>
-            <span class="chip-source">TVL scale factor</span>
-          </div>
-          <div class="formula-chip">
-            <span class="chip-factor">growth (gf)</span>
-            <span class="chip-source">7-day momentum</span>
-          </div>
-          <div class="formula-chip">
-            <span class="chip-factor">age (af)</span>
-            <span class="chip-source">No-token age maturity</span>
-          </div>
-          <div class="formula-chip">
-            <span class="chip-factor">chains (cf)</span>
-            <span class="chip-source">Multi-chain breadth</span>
-          </div>
+        <div class="fact">
+          <dt>Ranked</dt>
+          <dd>
+            <span id="fact-ranked">—</span>
+            <small id="fact-ranked-split"></small>
+          </dd>
         </div>
-      </section>
+        <div class="fact">
+          <dt>Top implied value</dt>
+          <dd>
+            <span id="fact-top-value">—</span>
+            <small id="fact-top-name"></small>
+          </dd>
+        </div>
+        <div class="fact">
+          <dt>Multiples priced from</dt>
+          <dd>
+            <span id="fact-comps">—</span>
+            <small>traded tokens</small>
+          </dd>
+        </div>
+      </dl>
     </header>
 
-    <section class="controls-bar" aria-label="Board controls">
-      <div class="tabs-group" role="tablist">
-        <button id="tab-board" class="tab-btn active" type="button" role="tab" aria-selected="true" data-tab="board">
-          Pre-Token Board
+    <hr class="masthead-rule">
+
+    <section class="method-strip" aria-label="Valuation method">
+      <div class="method-grid">
+        <div class="method-equation">
+          <span class="equation-title">Implied value</span>
+          <span class="equation-body">= TVL × base × scale × growth × age × chains</span>
+        </div>
+
+        <div class="method-factors">
+          <div class="factor">
+            <strong>Base</strong>
+            <span>The sector's median market cap ÷ TVL among protocols whose token already trades, shrunk toward the global median 0.214 (k = 10; sectors with fewer than 5 tokens use 0.214).</span>
+          </div>
+          <div class="factor">
+            <strong>Scale</strong>
+            <span>(max(TVL, $50M) ÷ $152.8M) to the power −0.15, capped at 1.182. Big pools earn a smaller multiple.</span>
+          </div>
+          <div class="factor">
+            <strong>Growth</strong>
+            <span>7-day TVL change clamped to −30%…+50%, then 1 ± 0.2·√(share of the limit). Range 0.80–1.20.</span>
+          </div>
+          <div class="factor">
+            <strong>Age</strong>
+            <span>Days listed with no token, log curve 0.90–1.15, saturating at 1,563 days.</span>
+          </div>
+          <div class="factor">
+            <strong>Chains</strong>
+            <span>1 + 0.03 per major chain (up to 3) + 0.035·ln(chains). Range 1.00–1.17.</span>
+          </div>
+        </div>
+      </div>
+
+      <p class="method-note">The product is held to 0.047–1.047 (the snapshot's quartiles); ties step down $1 so every rank is strictly lower. Every figure comes from the snapshot; no name is hand-picked.</p>
+    </section>
+
+    <section class="toolbar" aria-label="Board controls">
+      <div class="tabs" role="tablist">
+        <button id="tab-board" class="tab is-active" type="button" role="tab" aria-selected="true" data-tab="board">
+          Pre-token board <span id="tab-board-count" class="tab-count">120</span>
         </button>
-        <button id="tab-comps" class="tab-btn" type="button" role="tab" aria-selected="false" data-tab="comps">
-          Valuation Comps <span class="tab-badge">Excluded</span>
+        <button id="tab-comps" class="tab" type="button" role="tab" aria-selected="false" data-tab="comps">
+          Token already trades <span id="tab-comps-count" class="tab-count">128</span>
         </button>
       </div>
 
-      <div id="board-controls" class="filter-row">
-        <div class="segmented-filters" role="group" aria-label="Tier filter">
-          <button id="filter-all" class="filter-btn active" type="button" data-filter="all">All</button>
-          <button id="filter-watchlist" class="filter-btn" type="button" data-filter="watchlist">Watchlist</button>
-          <button id="filter-discovery" class="filter-btn" type="button" data-filter="discovery">Discovery</button>
+      <div id="board-filters" class="filters">
+        <div class="tier-group" role="group" aria-label="Tier filter">
+          <button id="tier-all" class="tier-btn is-pressed" type="button" aria-pressed="true" data-tier="all">All</button>
+          <button id="tier-watchlist" class="tier-btn" type="button" aria-pressed="false" data-tier="watchlist">Watchlist</button>
+          <button id="tier-discovery" class="tier-btn" type="button" aria-pressed="false" data-tier="discovery">Discovery</button>
         </div>
 
-        <label class="control-field" for="category-select">
-          <span class="visually-hidden">Category</span>
-          <select id="category-select" aria-label="Filter by category">
-            <option value="all">All Categories</option>
-          </select>
-        </label>
+        <select id="sector-select" class="filter-select" aria-label="Filter by sector">
+          <option value="all">All sectors</option>
+        </select>
 
-        <label class="control-field search-field" for="search-input">
-          <span class="visually-hidden">Search protocol name or slug</span>
-          <input id="search-input" type="search" placeholder="Search name or slug..." autocomplete="off">
-        </label>
+        <select id="chain-select" class="filter-select" aria-label="Filter by chain">
+          <option value="all">All chains</option>
+        </select>
+
+        <input id="search-input" class="filter-search" type="search" placeholder="Search name or slug" autocomplete="off" aria-label="Search name or slug">
+
+        <span id="filter-status" class="filter-status">All 120 shown</span>
+
+        <button id="clear-filters" class="clear-btn" type="button" hidden>Clear filters</button>
       </div>
     </section>
 
-    <main class="main-stage">
-      <section id="board-section" class="table-section" aria-label="Pre-Token Protocol Board">
+    <main class="content">
+      <section id="board-section" class="board-section" aria-label="Pre-token board">
         <div class="table-wrap">
           <table id="board-table" class="data-table board-table">
             <thead>
               <tr>
                 <th class="col-rank sortable" data-sort="r" scope="col">Rank</th>
                 <th class="col-protocol sortable" data-sort="n" scope="col">Protocol</th>
-                <th class="col-category sortable" data-sort="c" scope="col">Category</th>
+                <th class="col-sector sortable" data-sort="c" scope="col">Sector</th>
+                <th class="col-chains sortable" data-sort="k" scope="col">Chains</th>
                 <th class="col-num sortable" data-sort="t" scope="col">TVL</th>
-                <th class="col-num sortable" data-sort="g" scope="col">7d %</th>
-                <th class="col-num sortable" data-sort="d" scope="col">Age</th>
-                <th class="col-num sortable" data-sort="k" scope="col">Chains</th>
-                <th class="col-num col-implied sortable active-sort" data-sort="v" scope="col">Implied Value</th>
+                <th class="col-num sortable" data-sort="g" scope="col">7d</th>
+                <th class="col-num sortable" data-sort="d" scope="col">No-token age</th>
+                <th class="col-num sortable" data-sort="m" scope="col">Multiple</th>
+                <th class="col-num col-implied sortable" data-sort="v" scope="col">Implied value</th>
               </tr>
             </thead>
             <tbody id="board-body"></tbody>
           </table>
         </div>
+        <p id="board-empty" class="empty-state" hidden>No protocol matches these filters. Clear a filter to see more of the board.</p>
       </section>
 
-      <section id="comps-section" class="table-section" aria-label="Excluded Valuation Comps" hidden>
-        <div class="comps-banner">
-          <div class="comps-note">
-            <span class="excluded-label">EXCLUDED · VALUATION COMPS</span>
-            <span>Tokenized benchmark protocols used to calibrate sector mcap/TVL base multiples. Strictly excluded from the Pre-Token ranking.</span>
+      <section id="comps-section" class="comps-section" aria-label="Token already trades" hidden>
+        <p class="comps-intro">These protocols already have a traded token, so they are kept off the board. Their market cap ÷ TVL ratios are the evidence behind each sector's base multiple.</p>
+
+        <div class="comps-panels">
+          <div class="comps-panel">
+            <h2>Sector base multiples</h2>
+            <div class="table-wrap">
+              <table id="sectors-table" class="data-table sectors-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Sector</th>
+                    <th class="col-num" scope="col">Tokens</th>
+                    <th class="col-num" scope="col">Median mcap÷TVL</th>
+                    <th class="col-num" scope="col">Base used</th>
+                  </tr>
+                </thead>
+                <tbody id="sectors-body"></tbody>
+              </table>
+            </div>
           </div>
-          <div id="comps-meta" class="meta-line"></div>
-        </div>
-        <div class="table-wrap">
-          <table id="comps-table" class="data-table comps-table">
-            <thead>
-              <tr>
-                <th class="col-protocol" data-sort="n" scope="col">Protocol</th>
-                <th class="col-category" data-sort="c" scope="col">Category</th>
-                <th class="col-num" data-sort="t" scope="col">TVL</th>
-                <th class="col-num" data-sort="m" scope="col">Market Cap</th>
-                <th class="col-num" data-sort="ratio" scope="col">mcap/TVL</th>
-              </tr>
-            </thead>
-            <tbody id="comps-body"></tbody>
-          </table>
+
+          <div class="comps-panel">
+            <h2>Valuation comps</h2>
+            <div class="table-wrap">
+              <table id="comps-table" class="data-table comps-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Protocol</th>
+                    <th scope="col">Sector</th>
+                    <th class="col-num" scope="col">TVL</th>
+                    <th class="col-num" scope="col">Market cap</th>
+                    <th class="col-num" scope="col">mcap÷TVL</th>
+                  </tr>
+                </thead>
+                <tbody id="comps-body"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </section>
     </main>
 
-    <aside id="detail" class="detail-drawer" aria-label="Protocol valuation detail" hidden>
-      <div class="detail-header">
-        <div>
-          <h2 id="detail-title">Protocol Detail</h2>
-          <div class="detail-sub" id="detail-sub"></div>
-        </div>
-        <button type="button" id="detail-close" class="detail-close" aria-label="Close detail drawer">×</button>
-      </div>
-      <div class="detail-metrics" id="detail-metrics"></div>
-      <div class="detail-section">
-        <h3>Valuation Derivation</h3>
-        <div class="derivation-formula" id="derivation-formula"></div>
-        <div class="derivation-lines" id="derivation-lines"></div>
-      </div>
-      <div class="detail-section" id="detail-comps-section">
-        <h3>Sector Benchmark &amp; Comps</h3>
-        <div id="detail-sector-comps"></div>
-      </div>
-      <div class="detail-section">
-        <h3>Actionable Farm Playbook</h3>
-        <ol id="detail-farm"></ol>
-      </div>
-    </aside>
+    <aside id="detail-drawer" class="detail-drawer" tabindex="-1" aria-label="Protocol detail" hidden></aside>
 
-    <footer class="site-footer">
-      <span>Frozen snapshot as of 2026-11-14 · Implied values are comparative model outputs, not price predictions · Farm steps are educational research notes, not financial advice.</span>
+    <footer class="sheet-footer">
+      <p>Frozen DefiLlama snapshot. "Records no token" means DefiLlama lists none, not that none exists. Implied values are this model's claims, not price predictions; farm plans are research notes, not financial advice.</p>
     </footer>
   </div>
 

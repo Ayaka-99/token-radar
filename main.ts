@@ -112,7 +112,7 @@ function main(): void {
   }
 
   const comps = selectComps(snapshot);
-  const dataScript = buildDataScript(board, comps, summary.as_of);
+  const dataScript = buildDataScript(board, comps, summary.as_of, summary.sectors, summary.constants);
 
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(

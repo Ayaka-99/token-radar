@@ -1,7 +1,7 @@
 // Token-launch valuation model: implied_value_usd = tvl_usd * M_eff, where
-// M_eff = clamp(M_base * F_scale * F_growth * F_age * F_chain, 0.031, 1.001).
+// M_eff = clamp(M_base * F_scale * F_growth * F_age * F_chain, 0.047, 1.047).
 // Category base multiples (M_base) use Bühlmann shrinkage (k=10) of empirical
-// snapshot mcap/TVL medians toward the global median (0.169).
+// snapshot mcap/TVL medians toward the global median (0.214).
 
 import { farmSteps } from './farm.ts';
 
@@ -49,12 +49,31 @@ export interface BoardRow {
   farm_steps: string[];
 }
 
+export interface SectorStat {
+  category: string;
+  n: number;
+  median: number;
+  base: number;
+}
+
+export interface ModelConstants {
+  global_median: number;
+  k: number;
+  n_min: number;
+  m_min: number;
+  m_max: number;
+  floor_usd: number;
+  tokens: number;
+}
+
 export interface BoardSummary {
   board_size: number;
   watchlist_size: number;
   discovery_size: number;
   as_of: string;
   categoryMultiples: Record<string, number>;
+  sectors: SectorStat[];
+  model: ModelConstants;
 }
 
 export class SnapshotError extends Error {
@@ -64,9 +83,11 @@ export class SnapshotError extends Error {
   }
 }
 
-const GLOBAL_MEDIAN = 0.169;
+const GLOBAL_MEDIAN = 0.214;
 const SHRINKAGE_K = 10;
 const MIN_CATEGORY_SAMPLES = 5;
+const M_MIN = 0.047;
+const M_MAX = 1.047;
 const MIN_IMPLIED_USD = 1_000_000;
 const MAX_IMPLIED_USD = 1e14;
 const MAJOR_CHAINS = new Set(['Ethereum', 'Solana', 'Base', 'Arbitrum', 'Binance']);
@@ -114,7 +135,7 @@ function daysBetween(startYmd: string | null, endYmd: string): number | null {
   return Math.max(0, Math.round((endMs - startMs) / 86_400_000));
 }
 
-export function computeCategoryMultiples(snapshot: Snapshot): Record<string, number> {
+export function computeSectorStats(snapshot: Snapshot): SectorStat[] {
   const byCategory = new Map<string, number[]>();
   const allCategories = new Set<string>();
 
@@ -130,17 +151,29 @@ export function computeCategoryMultiples(snapshot: Snapshot): Record<string, num
     }
   }
 
-  const result: Record<string, number> = {};
+  const stats: SectorStat[] = [];
   for (const cat of [...allCategories].sort()) {
     const ratios = byCategory.get(cat) ?? [];
     const n = ratios.length;
-    if (n < MIN_CATEGORY_SAMPLES) {
-      result[cat] = GLOBAL_MEDIAN;
-    } else {
-      const mc = median(ratios);
-      const mBase = (n * mc + SHRINKAGE_K * GLOBAL_MEDIAN) / (n + SHRINKAGE_K);
-      result[cat] = roundSig(mBase, 3);
-    }
+    const med = n === 0 ? 0 : median(ratios);
+    const base =
+      n < MIN_CATEGORY_SAMPLES
+        ? GLOBAL_MEDIAN
+        : roundSig((n * med + SHRINKAGE_K * GLOBAL_MEDIAN) / (n + SHRINKAGE_K), 3);
+    stats.push({
+      category: cat,
+      n,
+      median: med,
+      base,
+    });
+  }
+  return stats;
+}
+
+export function computeCategoryMultiples(snapshot: Snapshot): Record<string, number> {
+  const result: Record<string, number> = {};
+  for (const s of computeSectorStats(snapshot)) {
+    result[s.category] = s.base;
   }
   return result;
 }
@@ -263,7 +296,7 @@ export function score(
   const rawCf = 1 + 0.03 * Math.min(nMaj, 3) + 0.035 * Math.log(nChains);
   const cf = roundSig(rawCf, 3);
 
-  const mEff = clamp(bm * sf * gf * af * cf, 0.031, 1.001);
+  const mEff = clamp(bm * sf * gf * af * cf, M_MIN, M_MAX);
   const value = clamp(Math.round(p.tvl_usd * mEff), MIN_IMPLIED_USD, MAX_IMPLIED_USD);
 
   return {
@@ -287,7 +320,13 @@ function isEligibleDiscovery(p: SnapshotProtocol): boolean {
 }
 
 export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; summary: BoardSummary } {
-  const categoryMultiples = computeCategoryMultiples(snapshot);
+  const sectors = computeSectorStats(snapshot);
+  const categoryMultiples: Record<string, number> = {};
+  let tokens = 0;
+  for (const s of sectors) {
+    categoryMultiples[s.category] = s.base;
+    tokens += s.n;
+  }
   activeCategoryMultiples = categoryMultiples;
 
   const bySlug = new Map<string, SnapshotProtocol>();
@@ -378,6 +417,7 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; summary: Bo
       tvl_usd: p.tvl_usd,
       change_7d: p.change_7d,
       ageDays: item.ageDays,
+      implied_value_usd: finalValue,
     });
 
     board.push({
@@ -404,6 +444,16 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; summary: Bo
       discovery_size: discoveryPicked.length,
       as_of: snapshot.as_of,
       categoryMultiples,
+      sectors,
+      model: {
+        global_median: GLOBAL_MEDIAN,
+        k: SHRINKAGE_K,
+        n_min: MIN_CATEGORY_SAMPLES,
+        m_min: M_MIN,
+        m_max: M_MAX,
+        floor_usd: snapshot.floor_usd,
+        tokens,
+      },
     },
   };
 }
