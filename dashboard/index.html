@@ -1,129 +1,75 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Token Radar — Pre-Token Valuation &amp; Farm Board</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div class="sheet">
-  <header class="masthead">
-    <div class="brand-col">
-      <div class="brand-line">
-        <span class="brand-mark" aria-hidden="true"></span>
-        <h1>Token Radar</h1>
-        <span id="snap-pill" class="snap-pill">Snapshot —</span>
-      </div>
-      <p class="lede">Every eligible pre-token protocol ranked by a snapshot-fitted valuation model tested held-out twice, with peer-survival odds and net-costed farm verdicts.</p>
-    </div>
-    <dl class="kpi-grid" aria-label="Board summary">
-      <div class="kpi kpi-ok"><dt>Watchlist covered</dt><dd id="kpi-wl">—</dd><small id="kpi-wl-sub">100% of $50M+ floor</small></div>
-      <div class="kpi"><dt>Pre-token ranked</dt><dd id="kpi-ranked">—</dd><small id="kpi-ranked-sub">—</small></div>
-      <div class="kpi"><dt>Snapshot accounted</dt><dd id="kpi-univ">—</dd><small id="kpi-univ-sub">—</small></div>
-      <div class="kpi"><dt>Held-out (LOO / WF)</dt><dd id="kpi-cv">—</dd><small id="kpi-cv-sub">—</small></div>
-      <div class="kpi"><dt>Farm verdicts</dt><dd id="kpi-farm">—</dd><small id="kpi-farm-sub">—</small></div>
-    </dl>
-  </header>
-
-  <section class="integrity-band" aria-label="Integrity checks and fitted model">
-    <div id="integrity-checks" class="integrity-row"></div>
-    <div id="model-line" class="model-row"></div>
+<header class="head">
+  <div>
+    <div class="bl"><span class="bm"></span><h1>Token Radar</h1><span id="sp" class="sp">—</span></div>
+    <p class="lede">Every clean pre-token protocol ranked by a live-verified L1-IRLS valuation model tested held-out twice, with peer-survival odds and net-costed farm verdicts.</p>
+  </div>
+  <dl class="kpis">
+    <div class="kpi ok"><dt>Watchlist covered</dt><dd id="k-wl">—</dd><small id="k-wls">—</small></div>
+    <div class="kpi"><dt>Pre-token ranked</dt><dd id="k-rk">—</dd><small id="k-rks">—</small></div>
+    <div class="kpi"><dt>Snapshot accounted</dt><dd id="k-un">—</dd><small id="k-uns">—</small></div>
+    <div class="kpi"><dt>Held-out (LOO / WF)</dt><dd id="k-cv">—</dd><small id="k-cvs">—</small></div>
+    <div class="kpi"><dt>Farm verdicts</dt><dd id="k-fm">—</dd><small id="k-fms">—</small></div>
+  </dl>
+</header>
+<section class="ib"><div id="ichk" class="ir"></div><div id="mlin" class="mr"></div></section>
+<section class="tb">
+  <div class="tabs" role="tablist">
+    <button id="t-b" class="tab on" type="button" role="tab" aria-selected="true">Pre-token board <span id="tcb" class="tc">—</span></button>
+    <button id="t-c" class="tab" type="button" role="tab" aria-selected="false">Token already trades &amp; Validation <span id="tcc" class="tc">—</span></button>
+  </div>
+  <div id="bf" class="flts">
+    <div class="seg"><button class="sb on" type="button" data-t="all">All</button><button class="sb" type="button" data-t="watchlist">Watchlist</button><button class="sb" type="button" data-t="discovery">Discovery</button></div>
+    <select id="fv" class="fs"><option value="">All verdicts</option><option value="2">FARM only</option><option value="1">THIN only</option><option value="0">SKIP only</option></select>
+    <select id="fs" class="fs"><option value="">All sectors</option></select>
+    <select id="fc" class="fs"><option value="">All chains</option></select>
+    <select id="fp" class="fs"><option value="">Size: TVL-tiered</option><option value="500">Size: $500</option><option value="1000">Size: $1,000</option><option value="2500">Size: $2,500</option><option value="5000">Size: $5,000</option></select>
+    <input id="fq" class="fq" type="search" placeholder="Search protocol, chain" autocomplete="off">
+    <span id="fst" class="fst">—</span>
+    <button id="fcl" class="clr" type="button" hidden>Clear</button>
+  </div>
+</section>
+<main>
+  <section id="s-b">
+    <div id="sbar" class="sbar" hidden></div>
+    <div class="tw"><table id="bt" class="tbl bt"><thead><tr id="bh"></tr></thead><tbody id="bb"></tbody></table></div>
+    <p id="be" class="emp" hidden>No protocol matches these filters. Clear filters to restore the full board.</p>
   </section>
-
-  <section class="toolbar" aria-label="Board controls">
-    <div class="tabs" role="tablist">
-      <button id="tab-board" class="tab is-active" type="button" role="tab" aria-selected="true">Pre-token board <span id="tab-board-count" class="tab-count">—</span></button>
-      <button id="tab-comps" class="tab" type="button" role="tab" aria-selected="false">Token already trades &amp; Validation <span id="tab-comps-count" class="tab-count">—</span></button>
-    </div>
-    <div id="board-filters" class="filters">
-      <div class="seg-group" role="group" aria-label="Tier filter">
-        <button id="tier-all" class="seg-btn is-on" type="button" aria-pressed="true" data-tier="all">All</button>
-        <button id="tier-watchlist" class="seg-btn" type="button" aria-pressed="false" data-tier="watchlist">Watchlist</button>
-        <button id="tier-discovery" class="seg-btn" type="button" aria-pressed="false" data-tier="discovery">Discovery</button>
+  <section id="s-c" hidden>
+    <div id="vg" class="vg"></div>
+    <div class="cs">
+      <div class="pnl">
+        <h2>Clean DeFi Sector Families &amp; Peer Rates</h2>
+        <p class="psub">L1-IRLS multipliers fitted on non-excluded DeFi comps; peer token rates over the eligible peer universe.</p>
+        <div class="tw iw"><table class="tbl"><thead><tr><th>Family</th><th class="num">Comps</th><th class="num">Med ×</th><th class="num">Fitted ×</th><th class="num">Peer token %</th></tr></thead><tbody id="fb"></tbody></table></div>
+        <h3 id="ah" class="sh3">Joint Feature Contribution</h3>
+        <div class="tw iw"><table class="tbl"><thead><tr><th>Snapshot feature</th><th>Val wt</th><th class="num">Val ΔLOO</th><th class="num">Odds ΔAUC</th><th>Primary role</th></tr></thead><tbody id="ab"></tbody></table></div>
       </div>
-      <select id="verdict-select" class="flt-sel" aria-label="Filter by farm verdict">
-        <option value="">All verdicts</option>
-        <option value="2">FARM only</option>
-        <option value="1">THIN only</option>
-        <option value="0">SKIP only</option>
-      </select>
-      <select id="sector-select" class="flt-sel" aria-label="Filter by sector"><option value="">All sectors</option></select>
-      <select id="chain-select" class="flt-sel" aria-label="Filter by chain"><option value="">All chains</option></select>
-      <input id="search-input" class="flt-search" type="search" placeholder="Search name, slug, chain" autocomplete="off" aria-label="Search protocols">
-      <span id="filter-status" class="flt-status">—</span>
-      <button id="clear-filters" class="clear-btn" type="button" hidden>Clear</button>
+      <div class="pnl">
+        <h2>Blind LOO Calibration &amp; Already-Trading Protocols</h2>
+        <p class="psub">Every protocol recording a token stays off the pre-token board; clean DeFi comps calibrate and test the curve.</p>
+        <div id="sc" class="scat"></div>
+        <div class="cbar">
+          <div class="seg"><button class="csb on" type="button" data-cs="2">Model comps <span id="c2"></span></button><button class="csb" type="button" data-cs="1">Excl. priced <span id="c1"></span></button><button class="csb" type="button" data-cs="0">No MCap <span id="c0"></span></button><button class="csb" type="button" data-cs="all">All <span id="ca"></span></button></div>
+          <input id="cq" class="fq csrc" type="search" placeholder="Filter trading tokens" autocomplete="off"><span id="cst" class="fst">—</span>
+        </div>
+        <div class="tw iw cw"><table class="tbl"><thead><tr><th>Protocol</th><th>Sector</th><th class="num">TVL</th><th class="num">Actual MCap</th><th class="num">mcap÷TVL</th><th class="num">Blind LOO</th></tr></thead><tbody id="cb"></tbody></table></div>
+      </div>
     </div>
   </section>
-
-  <main>
-    <section id="board-section" aria-label="Pre-token board">
-      <div class="table-wrap">
-        <table id="board-table" class="tbl board-tbl">
-          <thead>
-            <tr>
-              <th class="col-rank sortable" data-sort="r" scope="col">Rank<span class="sort-arrow"></span></th>
-              <th class="sortable" data-sort="n" scope="col">Protocol<span class="sort-arrow"></span></th>
-              <th class="sortable" data-sort="c" scope="col">Sector<span class="sort-arrow"></span></th>
-              <th class="sortable" data-sort="k" scope="col">Chains<span class="sort-arrow"></span></th>
-              <th class="num sortable" data-sort="t" scope="col">TVL<span class="sort-arrow"></span></th>
-              <th class="num sortable" data-sort="g" scope="col">7d<span class="sort-arrow"></span></th>
-              <th class="num sortable" data-sort="d" scope="col">Age<span class="sort-arrow"></span></th>
-              <th class="num sortable" data-sort="m" scope="col">Multiple<span class="sort-arrow"></span></th>
-              <th class="num sortable" data-sort="v" scope="col">Implied Value<span class="sort-arrow"></span></th>
-              <th class="num sortable" data-sort="o" scope="col">Peer Odds<span class="sort-arrow"></span></th>
-              <th class="num sortable" data-sort="e" scope="col">Farm Verdict<span class="sort-arrow"></span></th>
-            </tr>
-          </thead>
-          <tbody id="board-body"></tbody>
-        </table>
-      </div>
-      <p id="board-empty" class="empty-state" hidden>No protocol matches these filters. Clear filters to restore the full board.</p>
-    </section>
-
-    <section id="comps-section" aria-label="Traded tokens and validation" hidden>
-      <div id="val-grid" class="val-grid"></div>
-      <div class="comps-split">
-        <div class="panel">
-          <h2>Sector Families &amp; Peer Tokenization Rates</h2>
-          <p class="panel-sub">Fitted L1-IRLS multipliers and empirical peer tokenization rates across all non-excluded snapshot protocols.</p>
-          <div class="table-wrap inner-wrap">
-            <table class="tbl">
-              <thead><tr><th>Family</th><th class="num">Priced</th><th class="num">Med mcap÷TVL</th><th class="num">Fitted ×</th><th class="num">Peer token %</th></tr></thead>
-              <tbody id="fams-body"></tbody>
-            </table>
-          </div>
-          <h3 class="sub-h3">Term-by-Term LOO-CV Ablation (n = 128 priced tokens)</h3>
-          <div class="table-wrap inner-wrap">
-            <table class="tbl">
-              <thead><tr><th>Model term</th><th>Fitted weight</th><th class="num">LOO if dropped</th><th class="num">ΔRMSE</th></tr></thead>
-              <tbody id="ablation-body"></tbody>
-            </table>
-          </div>
-        </div>
-        <div class="panel">
-          <h2>Already-Trading Comps (Blind LOO Predictions)</h2>
-          <p class="panel-sub">Protocols whose token already trades are kept off the pre-token board and used to fit and test the valuation curve.</p>
-          <div class="table-wrap inner-wrap">
-            <table class="tbl">
-              <thead><tr><th>Protocol</th><th>Sector</th><th class="num">TVL</th><th class="num">Actual MCap</th><th class="num">mcap÷TVL</th><th class="num">Blind LOO</th></tr></thead>
-              <tbody id="comps-body"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <div id="detail-backdrop" class="detail-backdrop" hidden></div>
-  <aside id="detail-drawer" class="detail-drawer" tabindex="-1" aria-label="Protocol detail" hidden></aside>
-
-  <footer class="sheet-footer">
-    <p>Frozen DefiLlama snapshot. "Records no token" reflects DefiLlama's record, not proof none exists. Implied values are conditional model claims fitted from snapshot comps; peer odds are descriptive base rates, not launch-date predictions; farm verdicts are illustrative, not financial advice.</p>
-  </footer>
+</main>
+<div id="dbg" class="dbg" hidden></div>
+<aside id="dbx" class="dd" tabindex="-1" hidden></aside>
+<footer class="ft"><p>Frozen DefiLlama snapshot. "Records no token" reflects DefiLlama's record, not proof none exists. Implied values are conditional model claims fitted live from clean snapshot comps; peer odds are descriptive base rates, not launch-date predictions; farm verdicts are illustrative, not financial advice.</p></footer>
 </div>
-<script src="../data.js"></script>
-<script src="z-summary.js"></script>
-<script src="ui.js"></script>
+<script src="../data.js"></script><script src="z-summary.js"></script><script src="model.js"></script><script src="farm.js"></script><script src="ui.js"></script>
 </body>
 </html>
