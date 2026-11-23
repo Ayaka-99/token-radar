@@ -1,7 +1,7 @@
 // Token-launch radar entry point (make.fun bounty token-radar-01).
 // Reads /input/snapshot.json, fits the valuation & peer-odds models from the snapshot's
-// own traded tokens, validates held-out twice (LOO-CV + walk-forward), writes board.json,
-// copies dashboard/ + screenshots/ + z-data.js, and builds dossier.json deterministically.
+// own clean traded DeFi tokens, validates held-out twice (LOO-CV + walk-forward),
+// writes board.json, copies dashboard/ + screenshots/ + data.js, and builds dossier.json.
 // Run: mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input ../token-radar-01-kit/input/snapshot.json
 
 import * as fs from 'node:fs';
@@ -12,7 +12,7 @@ import { buildSummaryScript, buildRowsScript } from './lib/farm.ts';
 import { buildDossier } from './vendor/makefun-board.ts';
 
 const REPO_DIR = path.dirname(fileURLToPath(import.meta.url));
-const DASHBOARD_FILES = ['index.html', 'style.css', 'ui.js'] as const;
+const DASHBOARD_FILES = ['index.html', 'style.css', 'model.js', 'farm.js', 'ui.js'] as const;
 const IMAGE_RE = /\.(png|jpe?g)$/i;
 
 function parseFlag(argv: string[], name: string, fallback: string): string {
@@ -53,6 +53,9 @@ function copyDashboard(repoDir: string, outDir: string, summaryScript: string, r
   }
   const destDir = path.join(outDir, 'dashboard');
   fs.mkdirSync(destDir, { recursive: true });
+  for (const old of fs.readdirSync(destDir)) {
+    fs.unlinkSync(path.join(destDir, old));
+  }
   for (const file of DASHBOARD_FILES) {
     fs.copyFileSync(path.join(srcDir, file), path.join(destDir, file));
   }
@@ -64,7 +67,6 @@ function copyScreenshots(repoDir: string, outDir: string): number {
   const srcDir = path.join(repoDir, 'screenshots');
   const destDir = path.join(outDir, 'screenshots');
   fs.mkdirSync(destDir, { recursive: true });
-  // Remove stale screenshots from destDir if re-running into an existing folder
   for (const old of fs.readdirSync(destDir)) {
     fs.unlinkSync(path.join(destDir, old));
   }
@@ -148,7 +150,7 @@ function main(): void {
   const u = summary.universe;
   const v = summary.validation;
   process.stdout.write(
-    `token radar: ${board.length} rows (${u.watchlist_covered}/${u.watchlist_total} watchlist + ${u.discovery_total} discovery; ${u.total}/${u.total} accounted: ${u.trading_total} trading, ${u.excluded_total} excl), LOO ${v.loo_model.med_x}x vs ${v.loo_flat25.med_x}x flat, WF ${v.wf_model.med_x}x vs ${v.wf_flat25.med_x}x flat, ${shotCount} shots, dossier ${dossierBytes.byteLength} bytes\n`
+    `token radar: ${board.length} rows (${u.watchlist_covered}/${u.watchlist_total} watchlist + ${u.discovery_total} discovery; ${u.total}/${u.total} accounted: ${u.trading_total} trading [${u.trading_model_priced} model comps], ${u.excluded_total} excl), LOO ${v.loo_model.med_x}x vs ${v.loo_flat25.med_x}x flat, WF ${v.wf_model.med_x}x vs ${v.wf_flat25.med_x}x flat, odds AUC ${summary.odds.auc_10f}, ${shotCount} shots, dossier ${dossierBytes.byteLength} bytes\n`
   );
 }
 
