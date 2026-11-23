@@ -1,9 +1,8 @@
 // Token-launch valuation & peer-odds engine (Node 22, standard library only).
-// Fits every valuation parameter dynamically from the snapshot's own priced traded
-// tokens via robust L1-IRLS Ridge regression with two-level Empirical Bayes sector
-// shrinkage, then validates held-out twice: Leave-One-Out CV and temporal
-// walk-forward (older -> newer). Also fits a 10-fold validated peer tokenization
-// survival model over all non-excluded snapshot protocols.
+// Fits every valuation parameter dynamically from the snapshot's clean non-excluded
+// priced DeFi tokens via robust L1-IRLS Ridge regression with two-level Empirical
+// Bayes sector shrinkage, validates held-out twice (LOO-CV + temporal walk-forward),
+// and fits a 10-fold validated peer tokenization survival model with feature ablations.
 // Pure & deterministic: no network, no Date.now(), no Math.random(), no hardcoded names.
 
 import { evaluateFarmEconomics, farmSteps, type FarmVerdict } from './farm.ts';
@@ -63,6 +62,7 @@ export interface BoardRow {
   plan_cost_usd: number;
   exp_net_usd: number;
   cond_net_usd: number;
+  exp_apr_pct: number;
   farm_steps: string[];
 }
 
@@ -85,6 +85,15 @@ export interface SectorStat {
   combined_mult: number;
   tok_n: number;
   total_n: number;
+}
+
+export interface AgeBucketStat {
+  label: string;
+  minDays: number;
+  maxDays: number;
+  tok_n: number;
+  total_n: number;
+  rate: number;
 }
 
 export interface FittedValuationModel {
@@ -115,6 +124,7 @@ export interface FittedOddsModel {
   b_age: number;
   b_age_miss: number;
   b_ch: number;
+  b_g: number;
   ref_log_tvl: number;
   ref_log_age: number;
   fam_eff: Record<string, number>;
@@ -139,8 +149,11 @@ export interface TermAblation {
   term: string;
   slope: string;
   loo_med_x: number;
+  delta_med_x: number;
   loo_rmse: number;
   delta_rmse: number;
+  odds_delta_auc: number;
+  role: string;
 }
 
 export interface ValidationReport {
@@ -157,21 +170,24 @@ export interface ValidationReport {
 export interface CompRow {
   slug: string;
   name: string;
+  symbol: string | null;
   category: string;
   family: string;
   tvl_usd: number;
-  mcap_usd: number;
-  loo_pred_usd: number;
+  mcap_usd: number | null;
+  loo_pred_usd: number | null;
   change_7d: number | null;
   ageDays: number | null;
+  chainCount: number;
+  status: 'model' | 'excluded' | 'unpriced';
 }
 
 export interface UniverseAccounting {
   total: number;
   trading_total: number;
-  trading_priced: number;
-  trading_zero_or_neg: number;
-  trading_null_mcap: number;
+  trading_model_priced: number;
+  trading_excl_priced: number;
+  trading_unpriced: number;
   pretoken_total: number;
   watchlist_total: number;
   watchlist_covered: number;
@@ -192,7 +208,9 @@ export interface BoardSummary {
   validation: ValidationReport;
   families: FamilyStat[];
   sectors: SectorStat[];
+  age_curve: AgeBucketStat[];
   comps: CompRow[];
+  all_trading: CompRow[];
   verdict_counts: { FARM: number; THIN: number; SKIP: number };
 }
 
@@ -213,6 +231,7 @@ export const SECTOR_FAMILY_MAP: Record<string, string> = {
   'Leveraged Farming': 'Vault & Curator',
   Lending: 'Credit & CDP',
   'Collateral Markets': 'Credit & CDP',
+  'Uncollateralized Lending': 'Credit & CDP',
   CDP: 'Credit & CDP',
   'CDP Manager': 'Credit & CDP',
   'Collateral Management': 'Credit & CDP',
@@ -221,27 +240,21 @@ export const SECTOR_FAMILY_MAP: Record<string, string> = {
   Derivatives: 'Trading & Markets',
   'Prediction Market': 'Trading & Markets',
   Options: 'Trading & Markets',
+  'Interest Rate Derivatives': 'Trading & Markets',
   RWA: 'RWA & Basis',
   'Basis Trading': 'RWA & Basis',
   'Stablecoin Wrapper': 'RWA & Basis',
   'Dual-Token Stablecoin': 'RWA & Basis',
-  'Liquid Staking': 'Staking & Restaking',
-  'Liquid Restaking': 'Staking & Restaking',
   Restaking: 'Staking & Restaking',
   'Staking Pool': 'Staking & Restaking',
-  'Restaked BTC': 'Staking & Restaking',
   'Anchor BTC': 'Staking & Restaking',
   'Decentralized BTC': 'Staking & Restaking',
-  Bridge: 'Infra & Bridge',
-  'Canonical Bridge': 'Infra & Bridge',
   'Cross Chain Bridge': 'Infra & Bridge',
   Chain: 'Infra & Bridge',
-  CEX: 'Exchange (CEX)',
 };
 
 export const FAMILIES = [
   'Credit & CDP',
-  'Exchange (CEX)',
   'Infra & Bridge',
   'Other DeFi',
   'RWA & Basis',
@@ -262,10 +275,24 @@ const EXCLUDED_NAME_WORDS = /\b(wrapped|staked|staking)\b/i;
 const EXCLUDED_NAME_PREFIX = /^(Binance|Coinbase|Bybit|Kraken|Bitget|OKX|Bitfinex|Gemini)\b/i;
 const EXCLUDED_NAME_VERSION = /\s(V\d+(\.\d+)?|v\d+(\.\d+)?|\d+\.\d+)$/;
 
+// Generic DeFi words that must not trigger slug-prefix tokenized-sibling matching.
+const GENERIC_SLUG_ROOTS = new Set([
+  'defi', 'meta', 'open', 'zero', 'base', 'coin', 'swap', 'pool', 'safe', 'hash',
+  'omni', 'real', 'true', 'blue', 'gold', 'moon', 'star', 'fire', 'cash', 'bank',
+  'fund', 'core', 'prime', 'super', 'hyper', 'ultra', 'multi', 'cross', 'inter',
+  'smart', 'chain', 'token', 'yield', 'stake', 'vault', 'index', 'layer', 'block',
+  'proto', 'alpha', 'gamma', 'delta', 'sigma', 'omega', 'liquid', 'stable', 'credit',
+  'crypto', 'global', 'market', 'bridge', 'oracle', 'social', 'wallet', 'native',
+  'public', 'mirror', 'matrix', 'future', 'margin', 'option', 'lending', 'staking',
+  'finance', 'network', 'capital', 'digital', 'virtual', 'wrapped', 'staked',
+]);
+
 const MIN_IMPLIED_USD = 1_000_000;
 const MAX_IMPLIED_USD = 1e14;
 const LAM_TVL = 0.5;
-const LAM_OTHER = 40.0;
+const LAM_G = 50.0;
+const LAM_AGE = 80.0;
+const LAM_CH = 40.0;
 const LAM_FAM = 3.0;
 const LAM_CAT = 12.0;
 const L1_EPS = 0.15;
@@ -331,11 +358,36 @@ export function hasTokenRecord(p: SnapshotProtocol): boolean {
   );
 }
 
-export function excludedReason(p: SnapshotProtocol): string | null {
+export function collectTokenizedSlugRoots(protocols: SnapshotProtocol[]): Set<string> {
+  const roots = new Set<string>();
+  for (const p of protocols) {
+    if (!hasTokenRecord(p)) continue;
+    const root = p.slug.split('-')[0]!;
+    if (root.length >= 4 && !GENERIC_SLUG_ROOTS.has(root)) {
+      roots.add(root);
+    }
+  }
+  return roots;
+}
+
+export function excludedReason(
+  p: SnapshotProtocol,
+  tokenizedRoots?: Set<string>,
+  watchlistSet?: Set<string>
+): string | null {
   if (p.category !== null && EXCLUDED_CATEGORIES.has(p.category)) return p.category;
   if (EXCLUDED_NAME_WORDS.test(p.name)) return 'Wrapped/Staked name';
   if (EXCLUDED_NAME_PREFIX.test(p.name)) return 'Exchange product';
   if (EXCLUDED_NAME_VERSION.test(p.name)) return 'Versioned pool';
+  if (
+    tokenizedRoots &&
+    !hasTokenRecord(p) &&
+    !(watchlistSet && watchlistSet.has(p.slug)) &&
+    p.slug.includes('-')
+  ) {
+    const root = p.slug.split('-')[0]!;
+    if (tokenizedRoots.has(root)) return 'Tokenized sibling';
+  }
   return null;
 }
 
@@ -379,8 +431,19 @@ interface FitOptions {
   useChains?: boolean;
 }
 
+export interface CompFitInput {
+  category: string | null;
+  chains?: string[];
+  chainCount?: number;
+  tvl_usd: number;
+  mcap_usd: number;
+  change_7d: number | null;
+  listed_at?: string | null;
+  ageDays?: number | null;
+}
+
 export function fitValuationModel(
-  train: SnapshotProtocol[],
+  train: CompFitInput[],
   asOf: string,
   opts: FitOptions = {}
 ): FittedValuationModel {
@@ -391,17 +454,25 @@ export function fitValuationModel(
   const useAge = opts.useAge ?? true;
   const useChains = opts.useChains ?? true;
 
-  const refLogTvl = r6(median(train.map((p) => Math.log(p.tvl_usd))));
+  const getAge = (p: CompFitInput): number | null =>
+    p.ageDays !== undefined ? p.ageDays : ageDaysBetween(p.listed_at ?? null, asOf);
+  const getCh = (p: CompFitInput): number =>
+    Math.max(1, p.chainCount !== undefined ? p.chainCount : (p.chains?.length ?? 1));
+  const getG = (p: CompFitInput): number | null =>
+    p.change_7d !== null ? Math.round(p.change_7d * 100) / 100 : null;
+
+  const refLogTvl = r6(median(train.map((p) => Math.log(Math.round(p.tvl_usd)))));
   const ages: number[] = [];
   const gs: number[] = [];
   const lchs: number[] = [];
   const ratios: number[] = [];
   for (const p of train) {
-    const ad = ageDaysBetween(p.listed_at, asOf);
+    const ad = getAge(p);
     if (ad !== null) ages.push(Math.log1p(ad));
-    if (p.change_7d !== null) gs.push(clamp(p.change_7d, -40, 60) / 100);
-    lchs.push(Math.log(Math.max(1, p.chains.length)));
-    ratios.push(p.mcap_usd! / p.tvl_usd);
+    const gR = getG(p);
+    if (gR !== null) gs.push(clamp(gR, -40, 60) / 100);
+    lchs.push(Math.log(getCh(p)));
+    ratios.push(Math.round(p.mcap_usd) / Math.round(p.tvl_usd));
   }
   const refLogAge = r6(ages.length > 0 ? median(ages) : Math.log1p(365));
   const refG = r6(gs.length > 0 ? median(gs) : 0);
@@ -418,11 +489,14 @@ export function fitValuationModel(
 
   for (let i = 0; i < n; i++) {
     const p = train[i]!;
-    const lt = useTvl ? Math.log(p.tvl_usd) - refLogTvl : 0;
-    const g = useGrowth && p.change_7d !== null ? clamp(p.change_7d, -40, 60) / 100 - refG : 0;
-    const ad = ageDaysBetween(p.listed_at, asOf);
+    const tvl = Math.round(p.tvl_usd);
+    const mcap = Math.round(p.mcap_usd);
+    const lt = useTvl ? Math.log(tvl) - refLogTvl : 0;
+    const gR = getG(p);
+    const g = useGrowth && gR !== null ? clamp(gR, -40, 60) / 100 - refG : 0;
+    const ad = getAge(p);
     const la = useAge && ad !== null ? Math.log1p(ad) - refLogAge : 0;
-    const lch = useChains ? Math.log(Math.max(1, p.chains.length)) - refLogCh : 0;
+    const lch = useChains ? Math.log(getCh(p)) - refLogCh : 0;
     const row = new Array<number>(d).fill(0);
     row[0] = 1;
     row[1] = lt;
@@ -434,15 +508,15 @@ export function fitValuationModel(
       row[5 + fi] = 1;
     }
     X[i] = row;
-    y[i] = Math.log(p.mcap_usd! / p.tvl_usd);
+    y[i] = Math.log(mcap / tvl);
   }
 
   const lams = new Array<number>(d).fill(LAM_FAM);
   lams[0] = 0;
   lams[1] = useTvl ? LAM_TVL : 1e6;
-  lams[2] = useGrowth ? LAM_OTHER : 1e6;
-  lams[3] = useAge ? LAM_OTHER : 1e6;
-  lams[4] = useChains ? LAM_OTHER : 1e6;
+  lams[2] = useGrowth ? LAM_G : 1e6;
+  lams[3] = useAge ? LAM_AGE : 1e6;
+  lams[4] = useChains ? LAM_CH : 1e6;
   if (!useFam) {
     for (let k = 5; k < d; k++) lams[k] = 1e6;
   }
@@ -508,7 +582,7 @@ export function fitValuationModel(
     }
   }
 
-  // Empirical bounds & residual quartiles from rounded coefficients (so JS matches exact math!)
+  // Empirical bounds & initial residual quartiles (q25/q75 updated from LOO residuals after CV)
   const model: FittedValuationModel = {
     n_priced: n,
     b0: r6(beta[0]!),
@@ -533,7 +607,7 @@ export function fitValuationModel(
   for (let i = 0; i < n; i++) {
     const p = train[i]!;
     const predLogMcap = predictImplied(p, asOf, model).logMcap;
-    resList.push(Math.log(p.mcap_usd!) - predLogMcap);
+    resList.push(Math.log(Math.round(p.mcap_usd)) - predLogMcap);
   }
   model.q25_res = r4(quantile(resList, 0.25));
   model.q75_res = r4(quantile(resList, 0.75));
@@ -543,7 +617,8 @@ export function fitValuationModel(
 export function predictImplied(
   p: {
     category: string | null;
-    chains: string[];
+    chains?: string[];
+    chainCount?: number;
     tvl_usd: number;
     change_7d: number | null;
     listed_at?: string | null;
@@ -563,13 +638,14 @@ export function predictImplied(
   const fam = familyOf(p.category);
   const ageDays =
     p.ageDays !== undefined ? p.ageDays : ageDaysBetween(p.listed_at ?? null, asOf);
+  const chainCount = Math.max(1, p.chainCount !== undefined ? p.chainCount : (p.chains?.length ?? 1));
+  const tvl = Math.round(p.tvl_usd);
 
   const gRounded = p.change_7d !== null ? Math.round(p.change_7d * 100) / 100 : null;
-  const lt = Math.log(Math.max(1, p.tvl_usd)) - model.ref_log_tvl;
-  const gTerm =
-    gRounded !== null ? clamp(gRounded, -40, 60) / 100 - model.ref_g : 0;
+  const lt = Math.log(Math.max(1, tvl)) - model.ref_log_tvl;
+  const gTerm = gRounded !== null ? clamp(gRounded, -40, 60) / 100 - model.ref_g : 0;
   const ageTerm = ageDays !== null ? Math.log1p(ageDays) - model.ref_log_age : 0;
-  const chTerm = Math.log(Math.max(1, p.chains.length)) - model.ref_log_ch;
+  const chTerm = Math.log(chainCount) - model.ref_log_ch;
 
   const logBase = model.b0;
   const logFam = model.fam_eff[fam] ?? 0;
@@ -581,16 +657,16 @@ export function predictImplied(
 
   const rawLogMult = logBase + logFam + logCat + logScale + logGrowth + logAge + logChains;
   const logMult = clamp(rawLogMult, model.lo_mult_log, model.hi_mult_log);
-  const logMcap = Math.log(Math.max(1, p.tvl_usd)) + logMult;
+  const logMcap = Math.log(Math.max(1, tvl)) + logMult;
 
-  const value = clamp(Math.round(p.tvl_usd * Math.exp(logMult)), MIN_IMPLIED_USD, MAX_IMPLIED_USD);
+  const value = clamp(Math.round(tvl * Math.exp(logMult)), MIN_IMPLIED_USD, MAX_IMPLIED_USD);
   const lo = clamp(
-    Math.round(p.tvl_usd * Math.exp(logMult + model.q25_res)),
+    Math.round(tvl * Math.exp(logMult + model.q25_res)),
     Math.round(MIN_IMPLIED_USD * 0.25),
     value
   );
   const hi = clamp(
-    Math.round(p.tvl_usd * Math.exp(logMult + model.q75_res)),
+    Math.round(tvl * Math.exp(logMult + model.q75_res)),
     value,
     MAX_IMPLIED_USD
   );
@@ -613,7 +689,25 @@ export function predictImplied(
   };
 }
 
-function fitOddsCore(train: SnapshotProtocol[], asOf: string): Omit<FittedOddsModel, 'brier_10f' | 'brier_base' | 'brier_skill' | 'auc_10f'> {
+interface OddsFitOptions {
+  useTvl?: boolean;
+  useFam?: boolean;
+  useAge?: boolean;
+  useChains?: boolean;
+  useGrowth?: boolean;
+}
+
+function fitOddsCore(
+  train: SnapshotProtocol[],
+  asOf: string,
+  opts: OddsFitOptions = {}
+): Omit<FittedOddsModel, 'brier_10f' | 'brier_base' | 'brier_skill' | 'auc_10f'> {
+  const useTvl = opts.useTvl ?? true;
+  const useFam = opts.useFam ?? true;
+  const useAge = opts.useAge ?? true;
+  const useChains = opts.useChains ?? true;
+  const useGrowth = opts.useGrowth ?? true;
+
   const refLogTvl = r6(median(train.map((p) => Math.log(p.tvl_usd))));
   const ages: number[] = [];
   let nTok = 0;
@@ -627,7 +721,7 @@ function fitOddsCore(train: SnapshotProtocol[], asOf: string): Omit<FittedOddsMo
   FAMILIES.forEach((f, i) => famIdx.set(f, i));
 
   const n = train.length;
-  const d = 5 + FAMILIES.length;
+  const d = 6 + FAMILIES.length;
   const X: number[][] = new Array(n);
   const y: number[] = new Array(n);
   for (let i = 0; i < n; i++) {
@@ -635,17 +729,28 @@ function fitOddsCore(train: SnapshotProtocol[], asOf: string): Omit<FittedOddsMo
     const ad = ageDaysBetween(p.listed_at, asOf);
     const row = new Array<number>(d).fill(0);
     row[0] = 1;
-    row[1] = Math.log(p.tvl_usd) - refLogTvl;
-    row[2] = ad !== null ? Math.log1p(ad) - refLogAge : 0;
-    row[3] = ad === null ? 1 : 0;
-    row[4] = Math.log(Math.max(1, p.chains.length));
-    const fi = famIdx.get(familyOf(p.category)) ?? famIdx.get('Other DeFi')!;
-    row[5 + fi] = 1;
+    row[1] = useTvl ? Math.log(p.tvl_usd) - refLogTvl : 0;
+    row[2] = useAge && ad !== null ? Math.log1p(ad) - refLogAge : 0;
+    row[3] = useAge && ad === null ? 1 : 0;
+    row[4] = useChains ? Math.log(Math.max(1, p.chains.length)) : 0;
+    row[5] = useGrowth && p.change_7d !== null ? clamp(p.change_7d, -40, 60) / 100 : 0;
+    if (useFam) {
+      const fi = famIdx.get(familyOf(p.category)) ?? famIdx.get('Other DeFi')!;
+      row[6 + fi] = 1;
+    }
     X[i] = row;
     y[i] = hasTokenRecord(p) ? 1 : 0;
   }
 
-  const lams = [0, 2, 2, 2, 2, ...new Array<number>(FAMILIES.length).fill(6)];
+  const lams = [
+    0,
+    useTvl ? 2 : 1e6,
+    useAge ? 2 : 1e6,
+    useAge ? 2 : 1e6,
+    useChains ? 10 : 1e6,
+    useGrowth ? 2 : 1e6,
+    ...new Array<number>(FAMILIES.length).fill(useFam ? 6 : 1e6),
+  ];
   const beta = new Array<number>(d).fill(0);
 
   for (let iter = 0; iter < 10; iter++) {
@@ -674,44 +779,46 @@ function fitOddsCore(train: SnapshotProtocol[], asOf: string): Omit<FittedOddsMo
     for (let j = 0; j < d; j++) beta[j]! += step[j]!;
   }
 
-  // Empirical Bayes category logit shift (3 Newton steps with prior 2.0)
   const catLogit: Record<string, number> = {};
   const catsByProto = train.map((p) => p.category ?? 'Uncategorized');
   const uniqueCats = [...new Set(catsByProto)].sort();
   for (const c of uniqueCats) catLogit[c] = 0;
 
-  for (let step = 0; step < 3; step++) {
-    const cg = new Map<string, number>();
-    const ch = new Map<string, number>();
-    for (let i = 0; i < n; i++) {
-      const xi = X[i]!;
-      const c = catsByProto[i]!;
-      let z = catLogit[c]!;
-      for (let j = 0; j < d; j++) z += beta[j]! * xi[j]!;
-      const pr = 1 / (1 + Math.exp(-clamp(z, -20, 20)));
-      cg.set(c, (cg.get(c) ?? 0) + (y[i]! - pr));
-      ch.set(c, (ch.get(c) ?? 0) + pr * (1 - pr));
-    }
-    for (const c of uniqueCats) {
-      const gVal = (cg.get(c) ?? 0) - 2.0 * catLogit[c]!;
-      const hVal = (ch.get(c) ?? 0) + 2.0;
-      catLogit[c] = clamp(catLogit[c]! + gVal / hVal, -2.5, 2.5);
+  if (useFam) {
+    for (let step = 0; step < 3; step++) {
+      const cg = new Map<string, number>();
+      const ch = new Map<string, number>();
+      for (let i = 0; i < n; i++) {
+        const xi = X[i]!;
+        const c = catsByProto[i]!;
+        let z = catLogit[c]!;
+        for (let j = 0; j < d; j++) z += beta[j]! * xi[j]!;
+        const pr = 1 / (1 + Math.exp(-clamp(z, -20, 20)));
+        cg.set(c, (cg.get(c) ?? 0) + (y[i]! - pr));
+        ch.set(c, (ch.get(c) ?? 0) + pr * (1 - pr));
+      }
+      for (const c of uniqueCats) {
+        const gVal = (cg.get(c) ?? 0) - 2.0 * catLogit[c]!;
+        const hVal = (ch.get(c) ?? 0) + 2.0;
+        catLogit[c] = clamp(catLogit[c]! + gVal / hVal, -2.5, 2.5);
+      }
     }
   }
 
   const famEff: Record<string, number> = {};
-  for (let k = 0; k < FAMILIES.length; k++) famEff[FAMILIES[k]!] = r6(beta[5 + k]!);
+  for (let k = 0; k < FAMILIES.length; k++) famEff[FAMILIES[k]!] = useFam ? r6(beta[6 + k]!) : 0;
   const catEff: Record<string, number> = {};
-  for (const c of uniqueCats) catEff[c] = r6(catLogit[c]!);
+  for (const c of uniqueCats) catEff[c] = useFam ? r6(catLogit[c]!) : 0;
 
   return {
     n_peers: n,
     n_tokenized: nTok,
     b0: r6(beta[0]!),
-    b_tvl: r6(beta[1]!),
-    b_age: r6(beta[2]!),
-    b_age_miss: r6(beta[3]!),
-    b_ch: r6(beta[4]!),
+    b_tvl: useTvl ? r6(beta[1]!) : 0,
+    b_age: useAge ? r6(beta[2]!) : 0,
+    b_age_miss: useAge ? r6(beta[3]!) : 0,
+    b_ch: useChains ? r6(beta[4]!) : 0,
+    b_g: useGrowth ? r6(beta[5]!) : 0,
     ref_log_tvl: refLogTvl,
     ref_log_age: refLogAge,
     fam_eff: famEff,
@@ -720,19 +827,31 @@ function fitOddsCore(train: SnapshotProtocol[], asOf: string): Omit<FittedOddsMo
 }
 
 export function predictTokenOdds(
-  p: { category: string | null; chains: string[]; tvl_usd: number; listed_at?: string | null; ageDays?: number | null },
+  p: {
+    category: string | null;
+    chains: string[];
+    tvl_usd: number;
+    change_7d?: number | null;
+    listed_at?: string | null;
+    ageDays?: number | null;
+  },
   asOf: string,
-  odds: Pick<FittedOddsModel, 'b0' | 'b_tvl' | 'b_age' | 'b_age_miss' | 'b_ch' | 'ref_log_tvl' | 'ref_log_age' | 'fam_eff' | 'cat_eff'>
+  odds: Pick<
+    FittedOddsModel,
+    'b0' | 'b_tvl' | 'b_age' | 'b_age_miss' | 'b_ch' | 'b_g' | 'ref_log_tvl' | 'ref_log_age' | 'fam_eff' | 'cat_eff'
+  >
 ): { peerRate: number; matureRate: number; remOdds: number } {
   const cat = p.category ?? 'Uncategorized';
   const fam = familyOf(p.category);
   const ad = p.ageDays !== undefined ? p.ageDays : ageDaysBetween(p.listed_at ?? null, asOf);
+  const gTerm = p.change_7d !== undefined && p.change_7d !== null ? clamp(p.change_7d, -40, 60) / 100 : 0;
   const probAt = (age: number | null): number => {
     const z =
       odds.b0 +
       odds.b_tvl * (Math.log(Math.max(1, p.tvl_usd)) - odds.ref_log_tvl) +
       (age !== null ? odds.b_age * (Math.log1p(age) - odds.ref_log_age) : odds.b_age_miss) +
       odds.b_ch * Math.log(Math.max(1, p.chains.length)) +
+      odds.b_g * gTerm +
       (odds.fam_eff[fam] ?? 0) +
       (odds.cat_eff[cat] ?? 0);
     return 1 / (1 + Math.exp(-clamp(z, -12, 12)));
@@ -740,7 +859,7 @@ export function predictTokenOdds(
   const peerRate = probAt(ad);
   const matureAge = ad !== null ? Math.max(ad, MATURE_AGE_DAYS) : MATURE_AGE_DAYS;
   const matureRate = Math.max(peerRate, probAt(matureAge));
-  // Conditional survival hazard over remaining horizon to 4 years (falls with age as holdouts age out)
+  // Conditional survival hazard over remaining horizon to 4 years (declines with age as holdouts age out)
   const remOdds =
     ad !== null
       ? clamp((matureRate - peerRate) / Math.max(0.08, 1 - peerRate), 0.05, 0.85)
@@ -752,14 +871,17 @@ export function predictTokenOdds(
   };
 }
 
-export function fitTokenOddsModel(eligAll: SnapshotProtocol[], asOf: string): FittedOddsModel {
-  const sorted = eligAll.slice().sort((a, b) => a.slug.localeCompare(b.slug));
+function evalOdds10Fold(
+  sorted: SnapshotProtocol[],
+  asOf: string,
+  opts: OddsFitOptions = {}
+): { brier: number; brierBase: number; skill: number; auc: number } {
   const ys = sorted.map((p) => (hasTokenRecord(p) ? 1 : 0));
   const preds = new Array<number>(sorted.length).fill(0);
 
   for (let fold = 0; fold < 10; fold++) {
     const tr = sorted.filter((_, idx) => idx % 10 !== fold);
-    const m = fitOddsCore(tr, asOf);
+    const m = fitOddsCore(tr, asOf, opts);
     for (let idx = 0; idx < sorted.length; idx++) {
       if (idx % 10 === fold) preds[idx] = predictTokenOdds(sorted[idx]!, asOf, m).peerRate;
     }
@@ -786,13 +908,24 @@ export function fitTokenOddsModel(eligAll: SnapshotProtocol[], asOf: string): Fi
     }
   }
   const auc = posP.length > 0 && negP.length > 0 ? wins / (posP.length * negP.length) : 0.5;
+  return {
+    brier: r4(brier),
+    brierBase: r4(brierBase),
+    skill: r4(brierBase > 0 ? 1 - brier / brierBase : 0),
+    auc: r3(auc),
+  };
+}
+
+export function fitTokenOddsModel(eligAll: SnapshotProtocol[], asOf: string): FittedOddsModel {
+  const sorted = eligAll.slice().sort((a, b) => a.slug.localeCompare(b.slug));
+  const cv = evalOdds10Fold(sorted, asOf);
   const full = fitOddsCore(sorted, asOf);
   return {
     ...full,
-    brier_10f: r4(brier),
-    brier_base: r4(brierBase),
-    brier_skill: r4(brierBase > 0 ? 1 - brier / brierBase : 0),
-    auc_10f: r3(auc),
+    brier_10f: cv.brier,
+    brier_base: cv.brierBase,
+    brier_skill: cv.skill,
+    auc_10f: cv.auc,
   };
 }
 
@@ -859,19 +992,21 @@ function runLoo(priced: SnapshotProtocol[], asOf: string, opts: FitOptions = {})
 export function runValidation(
   priced: SnapshotProtocol[],
   fullModel: FittedValuationModel,
+  eligUniverse: SnapshotProtocol[],
+  fullOdds: FittedOddsModel,
   asOf: string
 ): { report: ValidationReport; looPredsUsd: Map<string, number> } {
-  const yAll = priced.map((p) => Math.log(p.mcap_usd!));
+  const yAll = priced.map((p) => Math.log(Math.round(p.mcap_usd!)));
   const looFull = runLoo(priced, asOf);
   const looPredsUsd = new Map<string, number>();
   for (let i = 0; i < priced.length; i++) {
     looPredsUsd.set(priced[i]!.slug, Math.round(Math.exp(looFull[i]!)));
   }
 
-  const looFlat25 = priced.map((p) => Math.log(p.tvl_usd * 0.25));
+  const looFlat25 = priced.map((p) => Math.log(Math.round(p.tvl_usd) * 0.25));
   const looGlobalMed = priced.map((p, i) => {
     const med = median(priced.filter((_, j) => j !== i).map((q) => q.mcap_usd! / q.tvl_usd));
-    return Math.log(p.tvl_usd * med);
+    return Math.log(Math.round(p.tvl_usd) * med);
   });
 
   // Temporal walk-forward (oldest 60% train -> newest 40% blind test)
@@ -882,33 +1017,73 @@ export function runValidation(
   const wfTrain = dated.slice(0, split);
   const wfTest = dated.slice(split);
   const wfModelFit = fitValuationModel(wfTrain, asOf);
-  const yWf = wfTest.map((p) => Math.log(p.mcap_usd!));
+  const yWf = wfTest.map((p) => Math.log(Math.round(p.mcap_usd!)));
   const wfPreds = wfTest.map((p) => predictImplied(p, asOf, wfModelFit).logMcap);
-  const wfFlat = wfTest.map((p) => Math.log(p.tvl_usd * 0.25));
+  const wfFlat = wfTest.map((p) => Math.log(Math.round(p.tvl_usd) * 0.25));
 
   const fullMetrics = evaluateLogPreds(yAll, looFull);
+  const sortedElig = eligUniverse.slice().sort((a, b) => a.slug.localeCompare(b.slug));
 
-  // Term-by-term LOO ablation (drop each term individually to prove empirical contribution!)
-  const ablateSpecs: Array<{ term: string; slope: string; opts: FitOptions }> = [
-    { term: 'TVL scale elasticity', slope: `β=${fullModel.b_tvl.toFixed(3)}`, opts: { useTvl: false } },
-    { term: 'Sector family + category', slope: '8 families + cat EB', opts: { useFam: false, useCat: false } },
-    { term: '7-day TVL growth', slope: `β=${fullModel.b_g.toFixed(3)}`, opts: { useGrowth: false } },
-    { term: 'No-token age tenure', slope: `β=${fullModel.b_age.toFixed(3)}`, opts: { useAge: false } },
-    { term: 'Chain footprint', slope: `β=${fullModel.b_ch.toFixed(3)}`, opts: { useChains: false } },
+  // Joint feature contribution across BOTH held-out Valuation LOO and Peer-Odds 10-fold CV
+  const ablateSpecs: Array<{
+    term: string;
+    slope: string;
+    valOpts: FitOptions;
+    oddsOpts: OddsFitOptions;
+    role: string;
+  }> = [
+    {
+      term: 'TVL scale',
+      slope: `β=${fullModel.b_tvl.toFixed(3)}`,
+      valOpts: { useTvl: false },
+      oddsOpts: { useTvl: false },
+      role: 'Core valuation + odds',
+    },
+    {
+      term: 'Sector family + cat',
+      slope: '7 families + EB',
+      valOpts: { useFam: false, useCat: false },
+      oddsOpts: { useFam: false },
+      role: 'Core valuation + odds',
+    },
+    {
+      term: 'Chain footprint',
+      slope: `β=${fullModel.b_ch.toFixed(3)}`,
+      valOpts: { useChains: false },
+      oddsOpts: { useChains: false },
+      role: 'Valuation + routing',
+    },
+    {
+      term: 'No-token age',
+      slope: `β=${fullModel.b_age.toFixed(3)}`,
+      valOpts: { useAge: false },
+      oddsOpts: { useAge: false },
+      role: '#1 odds + hold window',
+    },
+    {
+      term: '7-day TVL flow',
+      slope: `β=${fullModel.b_g.toFixed(3)}`,
+      valOpts: { useGrowth: false },
+      oddsOpts: { useGrowth: false },
+      role: 'Odds + entry timing',
+    },
   ];
   const ablations: TermAblation[] = ablateSpecs.map((spec) => {
-    const m = evaluateLogPreds(yAll, runLoo(priced, asOf, spec.opts));
+    const m = evaluateLogPreds(yAll, runLoo(priced, asOf, spec.valOpts));
+    const o = evalOdds10Fold(sortedElig, asOf, spec.oddsOpts);
     return {
       term: spec.term,
       slope: spec.slope,
       loo_med_x: m.med_x,
+      delta_med_x: r3(m.med_x - fullMetrics.med_x),
       loo_rmse: m.rmse,
-      // Positive delta_rmse means dropping the term worsens RMSE (so keeping it helps)
       delta_rmse: r3(m.rmse - fullMetrics.rmse),
+      odds_delta_auc: r3(fullOdds.auc_10f - o.auc),
+      role: spec.role,
     };
   });
 
-  // Update fullModel empirical prediction band directly from LOO out-of-sample residuals!
+  // Update fullModel empirical prediction band directly from LOO out-of-sample residuals
   const looRes = yAll.map((yt, i) => yt - looFull[i]!);
   fullModel.q25_res = r4(quantile(looRes, 0.25));
   fullModel.q75_res = r4(quantile(looRes, 0.75));
@@ -1018,11 +1193,13 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; summary: Bo
   const bySlug = new Map<string, SnapshotProtocol>();
   for (const p of snapshot.protocols) bySlug.set(p.slug, p);
 
-  // 1. Account for every single one of the 758 protocols!
+  const tokenizedRoots = collectTokenizedSlugRoots(snapshot.protocols);
+
+  // 1. Account for every single protocol in the snapshot cleanly
   const tradingAll: SnapshotProtocol[] = [];
-  const tradingPriced: SnapshotProtocol[] = [];
-  let tradingZeroOrNeg = 0;
-  let tradingNullMcap = 0;
+  const tradingModelPriced: SnapshotProtocol[] = [];
+  const tradingExclPriced: SnapshotProtocol[] = [];
+  let tradingUnpriced = 0;
 
   const watchlistProtos: SnapshotProtocol[] = [];
   const discoveryProtos: SnapshotProtocol[] = [];
@@ -1033,15 +1210,18 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; summary: Bo
   for (const p of snapshot.protocols) {
     if (hasTokenRecord(p)) {
       tradingAll.push(p);
-      if (p.mcap_usd === null) tradingNullMcap++;
-      else if (p.mcap_usd <= 0 || p.tvl_usd <= 0) tradingZeroOrNeg++;
-      else tradingPriced.push(p);
+      if (p.mcap_usd !== null && p.mcap_usd > 0 && p.tvl_usd > 0) {
+        if (excludedReason(p) === null) tradingModelPriced.push(p);
+        else tradingExclPriced.push(p);
+      } else {
+        tradingUnpriced++;
+      }
     } else {
       pretokenTotal++;
       if (watchlistSet.has(p.slug)) {
         watchlistProtos.push(p);
       } else {
-        const reason = excludedReason(p);
+        const reason = excludedReason(p, tokenizedRoots, watchlistSet);
         if (reason !== null) {
           excludedTotal++;
           excludedReasons[reason] = (excludedReasons[reason] ?? 0) + 1;
@@ -1058,17 +1238,23 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; summary: Bo
     }
   }
 
-  // 2. Fit valuation model on all priced traded tokens & validate held-out twice!
-  const model = fitValuationModel(tradingPriced, snapshot.as_of);
-  const { report: validation, looPredsUsd } = runValidation(tradingPriced, model, snapshot.as_of);
-
-  // 3. Fit peer tokenization & survival odds model over all non-excluded protocols (watchlist + eligible pre + non-excluded trading)
+  // 2. Fit peer tokenization survival model on non-excluded DeFi peer universe
   const eligUniverse = snapshot.protocols.filter(
-    (p) => watchlistSet.has(p.slug) || excludedReason(p) === null
+    (p) => watchlistSet.has(p.slug) || excludedReason(p, tokenizedRoots, watchlistSet) === null
   );
   const odds = fitTokenOddsModel(eligUniverse, snapshot.as_of);
 
-  // 4. Score every watchlist protocol + every eligible discovery protocol (all 198 eligible!)
+  // 3. Fit valuation model on all clean non-excluded DeFi priced comps & validate held-out twice
+  const model = fitValuationModel(tradingModelPriced, snapshot.as_of);
+  const { report: validation, looPredsUsd } = runValidation(
+    tradingModelPriced,
+    model,
+    eligUniverse,
+    odds,
+    snapshot.as_of
+  );
+
+  // 4. Score every watchlist + clean eligible discovery protocol
   const candidates = [
     ...watchlistProtos.map((p) => ({ p, watchlist: true })),
     ...discoveryProtos.map((p) => ({ p, watchlist: false })),
@@ -1106,7 +1292,7 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; summary: Bo
       name: p.name,
       category: cat,
       chains: p.chains,
-      tvl_usd: p.tvl_usd,
+      tvl_usd: Math.round(p.tvl_usd),
       change_7d: gRounded,
       ageDays: item.pred.ageDays,
       implied_value_usd: finalVal,
@@ -1123,7 +1309,7 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; summary: Bo
       category: cat,
       family: fam,
       chains: p.chains,
-      tvl_usd: p.tvl_usd,
+      tvl_usd: Math.round(p.tvl_usd),
       change_7d: p.change_7d,
       ageDays: item.pred.ageDays,
       watchlist: item.watchlist,
@@ -1137,17 +1323,18 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; summary: Bo
       rem_launch_odds: item.od.remOdds,
       farm_verdict: econ.verdict,
       plan_capital_usd: econ.capitalUsd,
-      plan_cost_usd: econ.totalCostUsd,
+      plan_cost_usd: econ.cashCostUsd,
       exp_net_usd: econ.expNetUsd,
       cond_net_usd: econ.condNetUsd,
+      exp_apr_pct: econ.expAprPct,
       farm_steps: steps,
     });
   }
 
-  // 5. Build family & sector evidence summaries
+  // 5. Build clean DeFi family, sector & empirical age-survival summaries
   const pricedByFam = new Map<string, number[]>();
   const pricedByCat = new Map<string, number[]>();
-  for (const p of tradingPriced) {
+  for (const p of tradingModelPriced) {
     const r = p.mcap_usd! / p.tvl_usd;
     const f = familyOf(p.category);
     const c = p.category ?? 'Uncategorized';
@@ -1211,51 +1398,60 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; summary: Bo
       };
     });
 
-  // 6. Select representative traded comps across board sectors (up to 24, closest to sector median mcap/TVL)
-  const comps: CompRow[] = [];
-  const usedSlugs = new Set<string>();
-  const boardCatList = [...boardCats].sort((a, b) => {
-    const da = (pricedByCat.get(b)?.length ?? 0) - (pricedByCat.get(a)?.length ?? 0);
-    return da !== 0 ? da : a.localeCompare(b);
+  // Empirical peer tokenization rate by age cohort (for detail SVG survival curve)
+  const ageSpecs = [
+    { label: '<6m', minDays: 0, maxDays: 180 },
+    { label: '6–12m', minDays: 180, maxDays: 365 },
+    { label: '1–2y', minDays: 365, maxDays: 730 },
+    { label: '2–4y', minDays: 730, maxDays: 1460 },
+    { label: '4y+', minDays: 1460, maxDays: 99999 },
+  ];
+  const ageCurve: AgeBucketStat[] = ageSpecs.map((b) => {
+    let tok = 0;
+    let tot = 0;
+    for (const p of eligUniverse) {
+      const ad = ageDaysBetween(p.listed_at, snapshot.as_of);
+      if (ad !== null && ad >= b.minDays && ad < b.maxDays) {
+        tot++;
+        if (hasTokenRecord(p)) tok++;
+      }
+    }
+    return { ...b, tok_n: tok, total_n: tot, rate: tot > 0 ? r3(tok / tot) : 0 };
   });
-  const byCatProtos = new Map<string, SnapshotProtocol[]>();
-  for (const p of tradingPriced) {
-    const c = p.category ?? 'Uncategorized';
-    const arr = byCatProtos.get(c) ?? [];
-    arr.push(p);
-    byCatProtos.set(c, arr);
-  }
-  const pickFromCat = (c: string, nth: number): SnapshotProtocol | null => {
-    const arr = (byCatProtos.get(c) ?? []).filter((x) => x.mcap_usd! / x.tvl_usd <= 50);
-    if (arr.length <= nth) return null;
-    const med = median(arr.map((x) => x.mcap_usd! / x.tvl_usd));
-    const sorted = arr.slice().sort((a, b) => {
-      const da = Math.abs(Math.log(a.mcap_usd! / a.tvl_usd) - Math.log(med));
-      const db = Math.abs(Math.log(b.mcap_usd! / b.tvl_usd) - Math.log(med));
-      if (Math.abs(da - db) > 1e-9) return da - db;
+
+  // 6. Export ALL 416 trading protocols (for searchable trading tab + browser live-refit of the 92 clean comps!)
+  const modelPricedSlugs = new Set(tradingModelPriced.map((p) => p.slug));
+  const exclPricedSlugs = new Set(tradingExclPriced.map((p) => p.slug));
+  const allTrading: CompRow[] = tradingAll
+    .map((p) => {
+      const status: CompRow['status'] = modelPricedSlugs.has(p.slug)
+        ? 'model'
+        : exclPricedSlugs.has(p.slug)
+          ? 'excluded'
+          : 'unpriced';
+      return {
+        slug: p.slug,
+        name: p.name,
+        symbol: p.symbol,
+        category: p.category ?? 'Uncategorized',
+        family: familyOf(p.category),
+        tvl_usd: Math.round(p.tvl_usd),
+        mcap_usd: p.mcap_usd !== null && p.mcap_usd > 0 ? Math.round(p.mcap_usd) : null,
+        loo_pred_usd: looPredsUsd.get(p.slug) ?? null,
+        change_7d: p.change_7d === null ? null : Math.round(p.change_7d * 100) / 100,
+        ageDays: ageDaysBetween(p.listed_at, snapshot.as_of),
+        chainCount: Math.max(1, p.chains.length),
+        status,
+      };
+    })
+    .sort((a, b) => {
+      const ord = (s: CompRow['status']): number => (s === 'model' ? 0 : s === 'excluded' ? 1 : 2);
+      if (ord(a.status) !== ord(b.status)) return ord(a.status) - ord(b.status);
       return b.tvl_usd - a.tvl_usd || a.slug.localeCompare(b.slug);
     });
-    return sorted[nth] ?? null;
-  };
-  for (let pass = 0; pass < 3 && comps.length < 24; pass++) {
-    for (const c of boardCatList) {
-      if (comps.length >= 24) break;
-      const picked = pickFromCat(c, pass);
-      if (!picked || usedSlugs.has(picked.slug)) continue;
-      usedSlugs.add(picked.slug);
-      comps.push({
-        slug: picked.slug,
-        name: picked.name,
-        category: picked.category ?? 'Uncategorized',
-        family: familyOf(picked.category),
-        tvl_usd: Math.round(picked.tvl_usd),
-        mcap_usd: Math.round(picked.mcap_usd!),
-        loo_pred_usd: looPredsUsd.get(picked.slug) ?? 0,
-        change_7d: picked.change_7d,
-        ageDays: ageDaysBetween(picked.listed_at, snapshot.as_of),
-      });
-    }
-  }
+
+  // Representative clean comps subset for summary
+  const comps = allTrading.filter((c) => c.status === 'model');
 
   const discoveryAboveFloor = discoveryProtos.filter((p) => p.tvl_usd >= snapshot.floor_usd).length;
 
@@ -1268,9 +1464,9 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; summary: Bo
       universe: {
         total: snapshot.protocols.length,
         trading_total: tradingAll.length,
-        trading_priced: tradingPriced.length,
-        trading_zero_or_neg: tradingZeroOrNeg,
-        trading_null_mcap: tradingNullMcap,
+        trading_model_priced: tradingModelPriced.length,
+        trading_excl_priced: tradingExclPriced.length,
+        trading_unpriced: tradingUnpriced,
         pretoken_total: pretokenTotal,
         watchlist_total: snapshot.watchlist.length,
         watchlist_covered: watchlistProtos.length,
@@ -1287,7 +1483,9 @@ export function buildRadar(snapshot: Snapshot): { board: BoardRow[]; summary: Bo
       validation,
       families,
       sectors,
+      age_curve: ageCurve,
       comps,
+      all_trading: allTrading,
       verdict_counts: verdictCounts,
     },
   };

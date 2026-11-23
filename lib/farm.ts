@@ -11,6 +11,7 @@ export interface FarmInput {
   name: string;
   category: string;
   chains: string[];
+  chainCount?: number;
   tvl_usd: number;
   change_7d: number | null;
   ageDays: number | null;
@@ -35,62 +36,57 @@ export interface FarmEconomics {
   gasUsd: number;
   frictionUsd: number;
   cashCostUsd: number;
-  oppCostUsd: number;
-  totalCostUsd: number;
+  oppCostRefUsd: number;
   condGrossUsd: number;
   expGrossUsd: number;
   condNetUsd: number;
   expNetUsd: number;
+  expAprPct: number;
   breakEvenCondUsd: number;
   breakEvenExpUsd: number;
   verdict: FarmVerdict;
 }
 
-export const GAS_USD: Record<string, number> = {
-  Ethereum: 2.0,
-  Bitcoin: 1.5,
-  Tron: 1.0,
-  Avalanche: 0.1,
-  Binance: 0.08,
-  Arbitrum: 0.05,
-  Optimism: 0.05,
-  'zkSync Era': 0.05,
-  Starknet: 0.05,
-  Base: 0.03,
-  Mantle: 0.03,
-  Polygon: 0.02,
-  Ink: 0.02,
-  Unichain: 0.02,
-  Monad: 0.02,
-  Berachain: 0.02,
-  Katana: 0.02,
-  Morph: 0.02,
-  'Robinhood Chain': 0.02,
-  'Plume Mainnet': 0.02,
-  Sei: 0.01,
-  Solana: 0.01,
-  'Hyperliquid L1': 0.01,
-  Sui: 0.01,
-  Aptos: 0.01,
-  Stellar: 0.01,
-  Plasma: 0.01,
-  Tempo: 0.01,
-  Ripple: 0.01,
-  Flare: 0.01,
-  Algorand: 0.01,
-  Arc: 0.01,
-  Stable: 0.01,
-  Bittensor: 0.02,
-  Provenance: 0.05,
-  Noble: 0.01,
-  BSquared: 0.02,
-  Mezo: 0.02,
-  RISE: 0.01,
-  XION: 0.01,
-  Manta: 0.03,
-};
+// Per-transaction gas estimates covering every chain on the pre-token board.
+const GAS_TIERS: Array<[number, string[]]> = [
+  [2.0, ['Ethereum']],
+  [1.5, ['Bitcoin']],
+  [1.0, ['Tron']],
+  [0.3, ['RSK']],
+  [0.1, ['Avalanche', 'Stacks']],
+  [0.08, ['Binance']],
+  [0.05, ['Arbitrum', 'Optimism', 'zkSync Era', 'Starknet', 'Provenance']],
+  [0.04, ['Linea', 'Scroll', 'Blast']],
+  [0.03, ['Base', 'Mantle', 'Manta', 'Hemi', 'Citrea']],
+  [
+    0.02,
+    [
+      'Polygon', 'Ink', 'Unichain', 'Monad', 'Berachain', 'Katana', 'Morph',
+      'Robinhood Chain', 'Plume Mainnet', 'Bittensor', 'BSquared', 'Mezo',
+      'Op_Bnb', 'Sophon', 'World Chain', 'Reya Network', 'Fluent', 'Pharos',
+      'Canton', 'Story', 'Etherlink', 'Strato', 'Hibachi', 'Babylon Genesis',
+      'Bifrost Network', 'ZIGChain', 'Aleo', 'CORE',
+    ],
+  ],
+  [
+    0.01,
+    [
+      'Sei', 'Solana', 'Hyperliquid L1', 'Sui', 'Aptos', 'Stellar', 'Plasma',
+      'Tempo', 'Ripple', 'Flare', 'Algorand', 'Arc', 'Stable', 'Noble',
+      'RISE', 'XION', 'Celo', 'Ronin', 'Klaytn', 'Flow', 'Qubic',
+    ],
+  ],
+];
 
-export const DEFAULT_GAS_USD = 0.25;
+export const GAS_USD: Record<string, number> = (() => {
+  const m: Record<string, number> = {};
+  for (const [usd, list] of GAS_TIERS) {
+    for (const c of list) m[c] = usd;
+  }
+  return m;
+})();
+
+export const DEFAULT_GAS_USD = 0.15;
 export const AIRDROP_SHARE = 0.05;
 export const RISK_FREE_APR = 0.04;
 
@@ -104,12 +100,19 @@ export type FamilyId =
   | 'lending'
   | 'cdp'
   | 'exchange'
+  | 'otc'
   | 'perpetuals'
+  | 'prediction'
   | 'rwa'
   | 'basis'
   | 'staking'
   | 'bitcoin'
   | 'chain'
+  | 'insurance'
+  | 'payments'
+  | 'cedefi'
+  | 'indexes'
+  | 'governance'
   | 'generic';
 
 export const CATEGORY_TO_FAMILY: Record<string, FamilyId> = {
@@ -122,13 +125,16 @@ export const CATEGORY_TO_FAMILY: Record<string, FamilyId> = {
   'Leveraged Farming': 'yield',
   Lending: 'lending',
   'Collateral Markets': 'lending',
+  'Uncollateralized Lending': 'lending',
   CDP: 'cdp',
   'CDP Manager': 'cdp',
+  'Collateral Management': 'cdp',
   Dexs: 'exchange',
-  'OTC Marketplace': 'exchange',
+  'OTC Marketplace': 'otc',
   Derivatives: 'perpetuals',
-  'Prediction Market': 'perpetuals',
   Options: 'perpetuals',
+  'Interest Rate Derivatives': 'perpetuals',
+  'Prediction Market': 'prediction',
   RWA: 'rwa',
   'Basis Trading': 'basis',
   'Stablecoin Wrapper': 'basis',
@@ -139,6 +145,12 @@ export const CATEGORY_TO_FAMILY: Record<string, FamilyId> = {
   'Decentralized BTC': 'bitcoin',
   Chain: 'chain',
   'Cross Chain Bridge': 'chain',
+  Insurance: 'insurance',
+  Payments: 'payments',
+  'Crypto Card Issuer': 'payments',
+  CeDeFi: 'cedefi',
+  Indexes: 'indexes',
+  'Governance Incentives': 'governance',
 };
 
 export interface FamilyProfile {
@@ -148,7 +160,8 @@ export interface FamilyProfile {
   risk: string;
   exit: string;
   exitTime: string;
-  feeBps: number; // protocol swap/mint/spread friction in bps of capital
+  feeBps: number;
+  yieldBearing: boolean;
 }
 
 export const FAMILY_PROFILES: Record<FamilyId, FamilyProfile> = {
@@ -160,6 +173,7 @@ export const FAMILY_PROFILES: Record<FamilyId, FamilyProfile> = {
     exit: 'redeem vault shares; large exits can wait on idle liquidity',
     exitTime: '1–2 days',
     feeBps: 5,
+    yieldBearing: true,
   },
   yield: {
     asset: 'USDC or ETH',
@@ -169,6 +183,7 @@ export const FAMILY_PROFILES: Record<FamilyId, FamilyProfile> = {
     exit: 'withdraw vault shares and claim residual rewards',
     exitTime: 'same day',
     feeBps: 10,
+    yieldBearing: true,
   },
   lending: {
     asset: 'blue-chip collateral (ETH, BTC wrapper or USDC)',
@@ -178,6 +193,7 @@ export const FAMILY_PROFILES: Record<FamilyId, FamilyProfile> = {
     exit: 'repay borrow balance in full, then withdraw collateral',
     exitTime: 'same day',
     feeBps: 15,
+    yieldBearing: true,
   },
   cdp: {
     asset: 'accepted collateral (ETH, LSTs or BTC wrapper)',
@@ -186,7 +202,8 @@ export const FAMILY_PROFILES: Record<FamilyId, FamilyProfile> = {
     risk: 'Redemptions and liquidations hit the lowest collateral ratios first; stay well above the floor',
     exit: 'repay minted debt and withdraw collateral',
     exitTime: 'same day',
-    feeBps: 25,
+    feeBps: 20,
+    yieldBearing: true,
   },
   exchange: {
     asset: 'two liquid assets for a major pair',
@@ -195,7 +212,18 @@ export const FAMILY_PROFILES: Record<FamilyId, FamilyProfile> = {
     risk: 'Impermanent loss can outpace fees on volatile pairs; stick to stable or correlated pairs',
     exit: 'remove LP position and collect swap fees',
     exitTime: 'same day',
-    feeBps: 30,
+    feeBps: 25,
+    yieldBearing: true,
+  },
+  otc: {
+    asset: 'USDC',
+    entry: 'complete venue onboarding on {N} and post maker limit orders in its deepest spot pair',
+    weekly: 'refresh two maker fills or rotate idle liquidity across active OTC books',
+    risk: 'Orderbook and OTC venues carry counterparty, settlement and KYC eligibility limits',
+    exit: 'cancel open orders and withdraw settled USDC balance',
+    exitTime: 'same day',
+    feeBps: 20,
+    yieldBearing: false,
   },
   perpetuals: {
     asset: 'USDC margin',
@@ -204,7 +232,18 @@ export const FAMILY_PROFILES: Record<FamilyId, FamilyProfile> = {
     risk: 'Taker fees, funding swings and sudden wicks liquidate positions above 2x',
     exit: 'close open positions and withdraw USDC margin',
     exitTime: 'same day',
-    feeBps: 45,
+    feeBps: 40,
+    yieldBearing: false,
+  },
+  prediction: {
+    asset: 'USDC',
+    entry: 'provide two-sided maker liquidity or buy paired YES/NO limit orders in liquid {N} markets',
+    weekly: 'rotate into 2–3 high-volume markets resolving within 30 days to build unique-market volume',
+    risk: 'Binary resolution, oracle disputes and thin books can lock or wipe unhedged positions',
+    exit: 'close or redeem resolved shares back to USDC',
+    exitTime: 'same day',
+    feeBps: 20,
+    yieldBearing: false,
   },
   rwa: {
     asset: 'USDC',
@@ -214,6 +253,7 @@ export const FAMILY_PROFILES: Record<FamilyId, FamilyProfile> = {
     exit: 'submit fund redemption request to USDC',
     exitTime: '1–3 business days',
     feeBps: 15,
+    yieldBearing: true,
   },
   basis: {
     asset: 'USDC or USDT',
@@ -223,6 +263,7 @@ export const FAMILY_PROFILES: Record<FamilyId, FamilyProfile> = {
     exit: 'initiate unstake cooldown (up to 7 days) and redeem',
     exitTime: 'up to 7 days',
     feeBps: 20,
+    yieldBearing: true,
   },
   staking: {
     asset: 'native chain token or ETH',
@@ -232,6 +273,7 @@ export const FAMILY_PROFILES: Record<FamilyId, FamilyProfile> = {
     exit: 'enter unstaking queue or swap receipt token',
     exitTime: '1–14 days',
     feeBps: 15,
+    yieldBearing: true,
   },
   bitcoin: {
     asset: 'BTC',
@@ -241,6 +283,7 @@ export const FAMILY_PROFILES: Record<FamilyId, FamilyProfile> = {
     exit: 'burn receipt token to redeem native BTC',
     exitTime: '1–3 days',
     feeBps: 25,
+    yieldBearing: true,
   },
   chain: {
     asset: 'ETH or USDC',
@@ -249,7 +292,58 @@ export const FAMILY_PROFILES: Record<FamilyId, FamilyProfile> = {
     risk: 'Canonical bridge exits can take up to 7 days; size only what you can lock',
     exit: 'unwind native positions and bridge back out',
     exitTime: 'up to 7 days',
-    feeBps: 30,
+    feeBps: 25,
+    yieldBearing: false,
+  },
+  insurance: {
+    asset: 'USDC or ETH',
+    entry: "underwrite coverage in {N}'s highest-capacity pool with clean claims history",
+    weekly: 'monitor active cover utilization, pending claims and streamed underwriting yield',
+    risk: 'Major covered-protocol exploits draw down underwriting capital and pause withdrawals',
+    exit: 'request withdrawal notice and redeem after cooldown window',
+    exitTime: '3–7 days',
+    feeBps: 15,
+    yieldBearing: true,
+  },
+  payments: {
+    asset: 'USDC or BTC',
+    entry: "open a funded channel or account on {N} and execute 3 distinct payment transfers",
+    weekly: 'route one merchant or peer payment to sustain active-account history',
+    risk: 'Custodial limits, channel liquidity imbalance and regional compliance gates can restrict access',
+    exit: 'settle open channels or balances back to self-custody wallet',
+    exitTime: 'same day',
+    feeBps: 15,
+    yieldBearing: false,
+  },
+  cedefi: {
+    asset: 'USDC or USDT',
+    entry: "complete {N}'s account onboarding and allocate into its primary on-chain yield sleeve",
+    weekly: 'verify proof-of-reserves reporting and claim accrued rewards',
+    risk: 'CeDeFi blends off-chain custodian solvency with smart-contract risk; cap sizing strictly',
+    exit: 'submit withdrawal to self-custody wallet',
+    exitTime: '1–2 days',
+    feeBps: 15,
+    yieldBearing: true,
+  },
+  indexes: {
+    asset: 'USDC or ETH',
+    entry: "mint or buy {N}'s flagship index basket and stake it in the protocol gauge",
+    weekly: 'check basket rebalance weights and claim any gauge incentives',
+    risk: 'Index baskets carry full constituent market beta plus rebalancing slippage',
+    exit: 'unstake and redeem index shares for underlying assets or USDC',
+    exitTime: 'same day',
+    feeBps: 25,
+    yieldBearing: true,
+  },
+  governance: {
+    asset: 'USDC or partner governance token',
+    entry: 'lock or delegate a small position on {N} and cast an epoch gauge vote',
+    weekly: 'vote in the weekly incentive epoch and claim bribe distributions',
+    risk: 'Vote-escrow locks cannot exit early and underlying token volatility can exceed bribes',
+    exit: 'claim final epoch rewards and withdraw once lock expires',
+    exitTime: 'at lock expiry',
+    feeBps: 20,
+    yieldBearing: true,
   },
   generic: {
     asset: 'USDC',
@@ -259,14 +353,15 @@ export const FAMILY_PROFILES: Record<FamilyId, FamilyProfile> = {
     exit: 'withdraw principal and claim pending rewards',
     exitTime: 'same day',
     feeBps: 15,
+    yieldBearing: true,
   },
 };
 
 export function getPlanCapital(tvlUsd: number): number {
-  if (tvlUsd >= 500_000_000) return 1000;
-  if (tvlUsd >= 100_000_000) return 500;
-  if (tvlUsd >= 30_000_000) return 300;
-  return 200;
+  if (tvlUsd >= 500_000_000) return 5000;
+  if (tvlUsd >= 100_000_000) return 2500;
+  if (tvlUsd >= 30_000_000) return 1000;
+  return 500;
 }
 
 export function getHoldWeeks(ageDays: number | null): number {
@@ -327,7 +422,7 @@ export function evaluateFarmEconomics(input: FarmInput, capitalOverride?: number
   const { firstChain, primary, secondary: rawSecondary } = pickChains(input.chains);
   const capitalUsd = capitalOverride ?? getPlanCapital(input.tvl_usd);
   const secondary =
-    rawSecondary && (getGasUsd(rawSecondary) < 1.0 || capitalUsd >= 1000) ? rawSecondary : null;
+    rawSecondary && (getGasUsd(rawSecondary) < 1.0 || capitalUsd >= 2500) ? rawSecondary : null;
   const holdWeeks = getHoldWeeks(input.ageDays);
   const isStaging = input.change_7d !== null && input.change_7d < -10;
   const entryCalls = isStaging ? 4 : 2;
@@ -343,8 +438,7 @@ export function evaluateFarmEconomics(input: FarmInput, capitalOverride?: number
   const protocolFee = (capitalUsd * profile.feeBps) / 10_000;
   const frictionUsd = Math.round((bridgeFee + protocolFee) * 100) / 100;
   const cashCostUsd = Math.round((gasUsd + frictionUsd) * 100) / 100;
-  const oppCostUsd = Math.round(capitalUsd * RISK_FREE_APR * (holdWeeks / 52) * 100) / 100;
-  const totalCostUsd = Math.round((cashCostUsd + oppCostUsd) * 100) / 100;
+  const oppCostRefUsd = Math.round(capitalUsd * RISK_FREE_APR * (holdWeeks / 52) * 100) / 100;
 
   const condRate = input.tvl_usd > 0 ? (input.implied_value_usd / input.tvl_usd) * AIRDROP_SHARE : 0;
   const expRate = condRate * Math.max(0.05, Math.min(1, input.rem_launch_odds));
@@ -352,6 +446,8 @@ export function evaluateFarmEconomics(input: FarmInput, capitalOverride?: number
   const expGrossUsd = Math.round(capitalUsd * expRate * 100) / 100;
   const condNetUsd = Math.round((condGrossUsd - cashCostUsd) * 100) / 100;
   const expNetUsd = Math.round((expGrossUsd - cashCostUsd) * 100) / 100;
+  const expAprPct =
+    capitalUsd > 0 ? Math.round(((expNetUsd / capitalUsd) * (52 / holdWeeks)) * 1000) / 10 : 0;
 
   const fixedCost = gasUsd + bridgeFee;
   const unitDrag = profile.feeBps / 10_000;
@@ -359,7 +455,7 @@ export function evaluateFarmEconomics(input: FarmInput, capitalOverride?: number
   const breakEvenExpUsd = expRate > unitDrag ? Math.round(fixedCost / (expRate - unitDrag)) : 0;
 
   let verdict: FarmVerdict;
-  if (expNetUsd >= 1.5 && expGrossUsd >= cashCostUsd * 1.35) {
+  if (expNetUsd >= 3.0 && expGrossUsd >= cashCostUsd * 1.4) {
     verdict = 'FARM';
   } else if (condNetUsd > 0) {
     verdict = 'THIN';
@@ -377,12 +473,12 @@ export function evaluateFarmEconomics(input: FarmInput, capitalOverride?: number
     gasUsd,
     frictionUsd,
     cashCostUsd,
-    oppCostUsd,
-    totalCostUsd,
+    oppCostRefUsd,
     condGrossUsd,
     expGrossUsd,
     condNetUsd,
     expNetUsd,
+    expAprPct,
     breakEvenCondUsd,
     breakEvenExpUsd,
     verdict,
@@ -400,6 +496,7 @@ export function buildFarmPlan(input: FarmInput, capitalOverride?: number): FarmS
   const isStaging = input.change_7d !== null && input.change_7d < -10;
   const entryCalls = isStaging ? 4 : 2;
   const enterTime = isStaging ? '7 days' : '15 min';
+  const chainTotal = input.chainCount ?? input.chains.length;
 
   const steps: FarmStep[] = [];
 
@@ -424,10 +521,11 @@ export function buildFarmPlan(input: FarmInput, capitalOverride?: number): FarmS
   } else if (isStaging) {
     timingNote = ` Stage in 3 tranches over 7 days: TVL fell ${Math.abs(input.change_7d!).toFixed(1)}% in 7d, so confirm outflows stabilize.`;
   }
+  const feeUsd = Math.round(((econ.capitalUsd * profile.feeBps) / 10_000) * 100) / 100;
   steps.push({
     title: 'Enter',
     body: `${entryCap} on ${econ.primaryChain}.${timingNote}`,
-    cost: `${fmtUsd(pGas * entryCalls)} gas (${entryCalls} calls)`,
+    cost: `${fmtUsd(pGas * entryCalls)} gas + ${fmtUsd(feeUsd)} (${profile.feeBps} bps)`,
     time: enterTime,
   });
 
@@ -436,7 +534,7 @@ export function buildFarmPlan(input: FarmInput, capitalOverride?: number): FarmS
     const bFee = econ.primaryChain === 'Ethereum' || econ.secondaryChain === 'Ethereum' ? 4 : 1;
     steps.push({
       title: 'Second chain',
-      body: `Bridge ${fmtUsd(Math.round(econ.capitalUsd * 0.25))} to ${econ.secondaryChain} and repeat the core action; ${input.name} spans ${input.chains.length} chains and multi-chain activity often qualifies separately.`,
+      body: `Bridge ${fmtUsd(Math.round(econ.capitalUsd * 0.25))} to ${econ.secondaryChain} and repeat the core action; ${input.name} spans ${chainTotal} chains and multi-chain activity often qualifies separately.`,
       cost: `${fmtUsd(sGas * 3)} gas + ~${fmtUsd(bFee)} bridge`,
       time: '20 min',
     });
@@ -451,10 +549,13 @@ export function buildFarmPlan(input: FarmInput, capitalOverride?: number): FarmS
   } else {
     tenureNote = `${Math.round(input.ageDays)}d tracked with no token; hold 4 weeks across at least one full snapshot epoch.`;
   }
+  const oppNote = profile.yieldBearing
+    ? `$0 cash (ref ${fmtUsd(econ.oppCostRefUsd)} @ 4%, offset by base yield)`
+    : `$0 cash (ref ${fmtUsd(econ.oppCostRefUsd)} idle @ 4% APR)`;
   steps.push({
     title: 'Hold',
     body: `Keep capital deployed for ${econ.holdWeeks} weeks without churning (time-weighted points). ${tenureNote}`,
-    cost: `${fmtUsd(econ.oppCostUsd)} opp. cost (4% APR)`,
+    cost: oppNote,
     time: `${econ.holdWeeks} weeks`,
   });
 
@@ -483,16 +584,17 @@ export function buildFarmPlan(input: FarmInput, capitalOverride?: number): FarmS
     time: profile.exitTime,
   });
 
-  // 8. Budget & Verdict
+  // 8. Budget & Verdict (100% consistent with cashCostUsd & expNetUsd)
   const oddsPct = Math.round(input.rem_launch_odds * 100);
   const netSign = econ.expNetUsd >= 0 ? '+' : '-';
+  const aprTxt = `${econ.expAprPct >= 0 ? '+' : ''}${econ.expAprPct.toFixed(1)}% exp APR`;
   const beNote =
     econ.breakEvenCondUsd > 0
       ? `cond. break-even ${fmtUsd(econ.breakEvenCondUsd)}`
       : 'fees exceed pro-rata yield';
   steps.push({
     title: `Verdict: ${econ.verdict}`,
-    body: `At ${fmtUsd(econ.capitalUsd)}, cash cost is ${fmtUsd(econ.cashCostUsd)} (${fmtUsd(econ.gasUsd)} gas + ${fmtUsd(econ.frictionUsd)} fees; ${fmtUsd(econ.oppCostUsd)} 4% ref opp. cost). 5% pro-rata of ${fmtShortUsd(input.implied_value_usd)} pays ${fmtUsd(econ.condGrossUsd)} if launched (${fmtUsd(econ.expGrossUsd)} at ${oddsPct}% peer odds, net ${netSign}${fmtUsd(Math.abs(econ.expNetUsd))}; ${beNote}). Illustrative.`,
+    body: `At ${fmtUsd(econ.capitalUsd)}, cash cost is ${fmtUsd(econ.cashCostUsd)} (${fmtUsd(econ.gasUsd)} gas + ${fmtUsd(econ.frictionUsd)} fees). 5% pro-rata of ${fmtShortUsd(input.implied_value_usd)} pays ${fmtUsd(econ.condGrossUsd)} if launched (${fmtUsd(econ.expGrossUsd)} at ${oddsPct}% peer odds, net ${netSign}${fmtUsd(Math.abs(econ.expNetUsd))} / ${aprTxt}; ${beNote}). Illustrative.`,
     cost: `${fmtUsd(econ.cashCostUsd)} cash`,
     time: `${econ.holdWeeks + 1} weeks`,
   });
@@ -506,12 +608,12 @@ export function serializeFarmStep(step: FarmStep): string {
   return s;
 }
 
-export function farmSteps(input: FarmInput): string[] {
-  return buildFarmPlan(input).map(serializeFarmStep);
+export function farmSteps(input: FarmInput, capitalOverride?: number): string[] {
+  return buildFarmPlan(input, capitalOverride).map(serializeFarmStep);
 }
 
-// Compact summary script written to dashboard/z-summary.js (~4.5 KB) so ALL dashboard
-// files fit 100% whole inside buildDossier's 65,536-byte text cap with zero truncation.
+// Compact summary script written to dashboard/z-summary.js (~3.5 KB) so ALL dashboard
+// source files fit 100% whole inside buildDossier's 65,536-byte text cap with zero cut.
 export function buildSummaryScript(board: BoardRow[], summary: BoardSummary): string {
   const boardCats = new Set(board.map((r) => r.category));
   const keptCatEff: Record<string, number> = {};
@@ -526,17 +628,30 @@ export function buildSummaryScript(board: BoardRow[], summary: BoardSummary): st
     f.tok_n,
     f.total_n,
   ]);
-  const compactComps = summary.comps.slice(0, 20).map((c) => [
-    c.name,
-    c.category,
-    c.tvl_usd,
-    c.mcap_usd,
-    c.loo_pred_usd,
-  ]);
+  const compactAge = summary.age_curve.map((b) => [b.label, b.minDays, b.maxDays, b.tok_n, b.total_n, b.rate]);
+  const compactAbl = summary.validation.ablations.map((a) => ({
+    term: a.term,
+    slope: a.slope,
+    delta_med_x: a.delta_med_x,
+    odds_delta_auc: a.odds_delta_auc,
+    role: a.role,
+  }));
+  const u = summary.universe;
   const payload = {
     as_of: summary.as_of,
     floor: summary.floor_usd,
-    u: summary.universe,
+    u: {
+      total: u.total,
+      trading_total: u.trading_total,
+      trading_model_priced: u.trading_model_priced,
+      trading_excl_priced: u.trading_excl_priced,
+      trading_unpriced: u.trading_unpriced,
+      watchlist_total: u.watchlist_total,
+      watchlist_covered: u.watchlist_covered,
+      discovery_total: u.discovery_total,
+      excluded_total: u.excluded_total,
+      excluded_reasons: u.excluded_reasons,
+    },
     m: { ...summary.model, cat_eff: keptCatEff },
     o: {
       n: summary.odds.n_peers,
@@ -546,18 +661,41 @@ export function buildSummaryScript(board: BoardRow[], summary: BoardSummary): st
       skill: summary.odds.brier_skill,
       auc: summary.odds.auc_10f,
     },
-    val: summary.validation,
-    vc: summary.verdict_counts,
+    val: {
+      lm: {
+        n: summary.validation.loo_model.n,
+        mx: summary.validation.loo_model.med_x,
+        rm: summary.validation.loo_model.rmse,
+        w2: summary.validation.loo_model.within_2x,
+        w3: summary.validation.loo_model.within_3x,
+      },
+      lf: summary.validation.loo_flat25.med_x,
+      lg: summary.validation.loo_global_med.med_x,
+      ws: summary.validation.wf_split_date,
+      wt: summary.validation.wf_train_n,
+      wm: {
+        n: summary.validation.wf_model.n,
+        mx: summary.validation.wf_model.med_x,
+        w3: summary.validation.wf_model.within_3x,
+      },
+      wf: summary.validation.wf_flat25.med_x,
+      ab: compactAbl.map((a) => [a.term, a.slope, a.delta_med_x, a.odds_delta_auc, a.role]),
+    },
     fams: compactFamilies,
-    comps: compactComps,
+    age: compactAge,
   };
   return `window.SUMMARY=${JSON.stringify(payload)};\n`;
 }
 
-// Full 198-row dataset written to /output/data.js (beside dashboard/, matching the starter).
+// Full pre-token rows + ALL 416 trading protocols written to /output/data.js (beside dashboard/,
+// outside the 64 KiB dossier source cap) so dashboard/model.js can LIVE-REFIT the exact 92-comp
+// L1-IRLS Ridge model in the browser and Tab 2 can search/filter every trading protocol.
 export function buildRowsScript(board: BoardRow[], summary: BoardSummary): string {
   const sortedRows = board.slice().sort((a, b) => a.rank - b.rank);
-  const catList = Array.from(new Set(sortedRows.map((r) => r.category))).sort();
+  const catSet = new Set<string>();
+  for (const r of sortedRows) catSet.add(r.category);
+  for (const c of summary.all_trading) catSet.add(c.category);
+  const catList = Array.from(catSet).sort();
   const catIdx = new Map<string, number>();
   catList.forEach((c, i) => catIdx.set(c, i));
 
@@ -576,7 +714,7 @@ export function buildRowsScript(board: BoardRow[], summary: BoardSummary): strin
       r.name,
       catIdx.get(r.category) ?? 0,
       r.watchlist ? 1 : 0,
-      Math.round(r.tvl_usd),
+      r.tvl_usd,
       r.change_7d === null ? null : Math.round(r.change_7d * 100) / 100,
       r.ageDays,
       r.chains.slice(0, 5).map((c) => chIdx.get(c) ?? 0),
@@ -594,5 +732,27 @@ export function buildRowsScript(board: BoardRow[], summary: BoardSummary): strin
     .filter((s) => catIdx.has(s.category))
     .map((s) => [catIdx.get(s.category)!, s.priced_n, s.median_mult, s.tok_n, s.total_n]);
 
-  return `window.BOARD_ROWS=${JSON.stringify({ cats: catList, chs: chList, secs: compactSectors, rows: compactRows })};\n`;
+  // All trading tokens: [slug, name, symbol, catIdx, tvl, mcap, looPred, g7d, ageDays, chCount, statusCode(2=model,1=excl,0=unpriced)]
+  const compactTrading = summary.all_trading.map((c) => [
+    c.slug,
+    c.name,
+    c.symbol ?? '',
+    catIdx.get(c.category) ?? 0,
+    c.tvl_usd,
+    c.mcap_usd,
+    c.loo_pred_usd,
+    c.change_7d,
+    c.ageDays,
+    c.chainCount,
+    c.status === 'model' ? 2 : c.status === 'excluded' ? 1 : 0,
+  ]);
+
+  return `window.BOARD_ROWS=${JSON.stringify({
+    cats: catList,
+    chs: chList,
+    gas: GAS_USD,
+    secs: compactSectors,
+    rows: compactRows,
+    trading: compactTrading,
+  })};\n`;
 }
