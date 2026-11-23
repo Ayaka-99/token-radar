@@ -1,190 +1,129 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Token Radar — Pre-Token Protocol Board</title>
-  <link rel="stylesheet" href="style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Radar — Pre-Token Valuation &amp; Farm Board</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="sheet">
-    <header class="masthead">
-      <div class="masthead-title">
+<div class="sheet">
+  <header class="masthead">
+    <div class="brand-col">
+      <div class="brand-line">
+        <span class="brand-mark" aria-hidden="true"></span>
         <h1>Token Radar</h1>
-        <p class="lede">Protocols that record no token yet, ranked by what their launch would be worth on today's record, each with a costed plan to farm it.</p>
+        <span id="snap-pill" class="snap-pill">Snapshot —</span>
       </div>
+      <p class="lede">Every eligible pre-token protocol ranked by a snapshot-fitted valuation model tested held-out twice, with peer-survival odds and net-costed farm verdicts.</p>
+    </div>
+    <dl class="kpi-grid" aria-label="Board summary">
+      <div class="kpi kpi-ok"><dt>Watchlist covered</dt><dd id="kpi-wl">—</dd><small id="kpi-wl-sub">100% of $50M+ floor</small></div>
+      <div class="kpi"><dt>Pre-token ranked</dt><dd id="kpi-ranked">—</dd><small id="kpi-ranked-sub">—</small></div>
+      <div class="kpi"><dt>Snapshot accounted</dt><dd id="kpi-univ">—</dd><small id="kpi-univ-sub">—</small></div>
+      <div class="kpi"><dt>Held-out (LOO / WF)</dt><dd id="kpi-cv">—</dd><small id="kpi-cv-sub">—</small></div>
+      <div class="kpi"><dt>Farm verdicts</dt><dd id="kpi-farm">—</dd><small id="kpi-farm-sub">—</small></div>
+    </dl>
+  </header>
 
-      <dl class="facts" aria-label="Snapshot summary">
-        <div class="fact">
-          <dt>Snapshot</dt>
-          <dd id="fact-snapshot">—</dd>
-        </div>
-        <div class="fact">
-          <dt>Ranked</dt>
-          <dd>
-            <span id="fact-ranked">—</span>
-            <small id="fact-ranked-split"></small>
-          </dd>
-        </div>
-        <div class="fact">
-          <dt>Top implied value</dt>
-          <dd>
-            <span id="fact-top-value">—</span>
-            <small id="fact-top-name"></small>
-          </dd>
-        </div>
-        <div class="fact">
-          <dt>Multiples priced from</dt>
-          <dd>
-            <span id="fact-comps">—</span>
-            <small>traded tokens</small>
-          </dd>
-        </div>
-      </dl>
-    </header>
+  <section class="integrity-band" aria-label="Integrity checks and fitted model">
+    <div id="integrity-checks" class="integrity-row"></div>
+    <div id="model-line" class="model-row"></div>
+  </section>
 
-    <hr class="masthead-rule">
-
-    <section class="method-strip" aria-label="Valuation method">
-      <div class="method-grid">
-        <div class="method-equation">
-          <span class="equation-title">Implied value</span>
-          <span class="equation-body">= TVL × base × scale × growth × age × chains</span>
-        </div>
-
-        <div class="method-factors">
-          <div class="factor">
-            <strong>Base</strong>
-            <span>The sector's median market cap ÷ TVL among protocols whose token already trades, shrunk toward the global median 0.214 (k = 10; sectors with fewer than 5 tokens use 0.214).</span>
-          </div>
-          <div class="factor">
-            <strong>Scale</strong>
-            <span>(max(TVL, $50M) ÷ $152.8M) to the power −0.15, capped at 1.182. Big pools earn a smaller multiple.</span>
-          </div>
-          <div class="factor">
-            <strong>Growth</strong>
-            <span>7-day TVL change clamped to −30%…+50%, then 1 ± 0.2·√(share of the limit). Range 0.80–1.20.</span>
-          </div>
-          <div class="factor">
-            <strong>Age</strong>
-            <span>Days listed with no token, log curve 0.90–1.15, saturating at 1,563 days.</span>
-          </div>
-          <div class="factor">
-            <strong>Chains</strong>
-            <span>1 + 0.03 per major chain (up to 3) + 0.035·ln(chains). Range 1.00–1.17.</span>
-          </div>
-        </div>
+  <section class="toolbar" aria-label="Board controls">
+    <div class="tabs" role="tablist">
+      <button id="tab-board" class="tab is-active" type="button" role="tab" aria-selected="true">Pre-token board <span id="tab-board-count" class="tab-count">—</span></button>
+      <button id="tab-comps" class="tab" type="button" role="tab" aria-selected="false">Token already trades &amp; Validation <span id="tab-comps-count" class="tab-count">—</span></button>
+    </div>
+    <div id="board-filters" class="filters">
+      <div class="seg-group" role="group" aria-label="Tier filter">
+        <button id="tier-all" class="seg-btn is-on" type="button" aria-pressed="true" data-tier="all">All</button>
+        <button id="tier-watchlist" class="seg-btn" type="button" aria-pressed="false" data-tier="watchlist">Watchlist</button>
+        <button id="tier-discovery" class="seg-btn" type="button" aria-pressed="false" data-tier="discovery">Discovery</button>
       </div>
+      <select id="verdict-select" class="flt-sel" aria-label="Filter by farm verdict">
+        <option value="">All verdicts</option>
+        <option value="2">FARM only</option>
+        <option value="1">THIN only</option>
+        <option value="0">SKIP only</option>
+      </select>
+      <select id="sector-select" class="flt-sel" aria-label="Filter by sector"><option value="">All sectors</option></select>
+      <select id="chain-select" class="flt-sel" aria-label="Filter by chain"><option value="">All chains</option></select>
+      <input id="search-input" class="flt-search" type="search" placeholder="Search name, slug, chain" autocomplete="off" aria-label="Search protocols">
+      <span id="filter-status" class="flt-status">—</span>
+      <button id="clear-filters" class="clear-btn" type="button" hidden>Clear</button>
+    </div>
+  </section>
 
-      <p class="method-note">The product is held to 0.047–1.047 (the snapshot's quartiles); ties step down $1 so every rank is strictly lower. Every figure comes from the snapshot; no name is hand-picked.</p>
+  <main>
+    <section id="board-section" aria-label="Pre-token board">
+      <div class="table-wrap">
+        <table id="board-table" class="tbl board-tbl">
+          <thead>
+            <tr>
+              <th class="col-rank sortable" data-sort="r" scope="col">Rank<span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort="n" scope="col">Protocol<span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort="c" scope="col">Sector<span class="sort-arrow"></span></th>
+              <th class="sortable" data-sort="k" scope="col">Chains<span class="sort-arrow"></span></th>
+              <th class="num sortable" data-sort="t" scope="col">TVL<span class="sort-arrow"></span></th>
+              <th class="num sortable" data-sort="g" scope="col">7d<span class="sort-arrow"></span></th>
+              <th class="num sortable" data-sort="d" scope="col">Age<span class="sort-arrow"></span></th>
+              <th class="num sortable" data-sort="m" scope="col">Multiple<span class="sort-arrow"></span></th>
+              <th class="num sortable" data-sort="v" scope="col">Implied Value<span class="sort-arrow"></span></th>
+              <th class="num sortable" data-sort="o" scope="col">Peer Odds<span class="sort-arrow"></span></th>
+              <th class="num sortable" data-sort="e" scope="col">Farm Verdict<span class="sort-arrow"></span></th>
+            </tr>
+          </thead>
+          <tbody id="board-body"></tbody>
+        </table>
+      </div>
+      <p id="board-empty" class="empty-state" hidden>No protocol matches these filters. Clear filters to restore the full board.</p>
     </section>
 
-    <section class="toolbar" aria-label="Board controls">
-      <div class="tabs" role="tablist">
-        <button id="tab-board" class="tab is-active" type="button" role="tab" aria-selected="true" data-tab="board">
-          Pre-token board <span id="tab-board-count" class="tab-count">120</span>
-        </button>
-        <button id="tab-comps" class="tab" type="button" role="tab" aria-selected="false" data-tab="comps">
-          Token already trades <span id="tab-comps-count" class="tab-count">128</span>
-        </button>
-      </div>
-
-      <div id="board-filters" class="filters">
-        <div class="tier-group" role="group" aria-label="Tier filter">
-          <button id="tier-all" class="tier-btn is-pressed" type="button" aria-pressed="true" data-tier="all">All</button>
-          <button id="tier-watchlist" class="tier-btn" type="button" aria-pressed="false" data-tier="watchlist">Watchlist</button>
-          <button id="tier-discovery" class="tier-btn" type="button" aria-pressed="false" data-tier="discovery">Discovery</button>
+    <section id="comps-section" aria-label="Traded tokens and validation" hidden>
+      <div id="val-grid" class="val-grid"></div>
+      <div class="comps-split">
+        <div class="panel">
+          <h2>Sector Families &amp; Peer Tokenization Rates</h2>
+          <p class="panel-sub">Fitted L1-IRLS multipliers and empirical peer tokenization rates across all non-excluded snapshot protocols.</p>
+          <div class="table-wrap inner-wrap">
+            <table class="tbl">
+              <thead><tr><th>Family</th><th class="num">Priced</th><th class="num">Med mcap÷TVL</th><th class="num">Fitted ×</th><th class="num">Peer token %</th></tr></thead>
+              <tbody id="fams-body"></tbody>
+            </table>
+          </div>
+          <h3 class="sub-h3">Term-by-Term LOO-CV Ablation (n = 128 priced tokens)</h3>
+          <div class="table-wrap inner-wrap">
+            <table class="tbl">
+              <thead><tr><th>Model term</th><th>Fitted weight</th><th class="num">LOO if dropped</th><th class="num">ΔRMSE</th></tr></thead>
+              <tbody id="ablation-body"></tbody>
+            </table>
+          </div>
         </div>
-
-        <select id="sector-select" class="filter-select" aria-label="Filter by sector">
-          <option value="all">All sectors</option>
-        </select>
-
-        <select id="chain-select" class="filter-select" aria-label="Filter by chain">
-          <option value="all">All chains</option>
-        </select>
-
-        <input id="search-input" class="filter-search" type="search" placeholder="Search name or slug" autocomplete="off" aria-label="Search name or slug">
-
-        <span id="filter-status" class="filter-status">All 120 shown</span>
-
-        <button id="clear-filters" class="clear-btn" type="button" hidden>Clear filters</button>
+        <div class="panel">
+          <h2>Already-Trading Comps (Blind LOO Predictions)</h2>
+          <p class="panel-sub">Protocols whose token already trades are kept off the pre-token board and used to fit and test the valuation curve.</p>
+          <div class="table-wrap inner-wrap">
+            <table class="tbl">
+              <thead><tr><th>Protocol</th><th>Sector</th><th class="num">TVL</th><th class="num">Actual MCap</th><th class="num">mcap÷TVL</th><th class="num">Blind LOO</th></tr></thead>
+              <tbody id="comps-body"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </section>
+  </main>
 
-    <main class="content">
-      <section id="board-section" class="board-section" aria-label="Pre-token board">
-        <div class="table-wrap">
-          <table id="board-table" class="data-table board-table">
-            <thead>
-              <tr>
-                <th class="col-rank sortable" data-sort="r" scope="col">Rank</th>
-                <th class="col-protocol sortable" data-sort="n" scope="col">Protocol</th>
-                <th class="col-sector sortable" data-sort="c" scope="col">Sector</th>
-                <th class="col-chains sortable" data-sort="k" scope="col">Chains</th>
-                <th class="col-num sortable" data-sort="t" scope="col">TVL</th>
-                <th class="col-num sortable" data-sort="g" scope="col">7d</th>
-                <th class="col-num sortable" data-sort="d" scope="col">No-token age</th>
-                <th class="col-num sortable" data-sort="m" scope="col">Multiple</th>
-                <th class="col-num col-implied sortable" data-sort="v" scope="col">Implied value</th>
-              </tr>
-            </thead>
-            <tbody id="board-body"></tbody>
-          </table>
-        </div>
-        <p id="board-empty" class="empty-state" hidden>No protocol matches these filters. Clear a filter to see more of the board.</p>
-      </section>
+  <div id="detail-backdrop" class="detail-backdrop" hidden></div>
+  <aside id="detail-drawer" class="detail-drawer" tabindex="-1" aria-label="Protocol detail" hidden></aside>
 
-      <section id="comps-section" class="comps-section" aria-label="Token already trades" hidden>
-        <p class="comps-intro">These protocols already have a traded token, so they are kept off the board. Their market cap ÷ TVL ratios are the evidence behind each sector's base multiple.</p>
-
-        <div class="comps-panels">
-          <div class="comps-panel">
-            <h2>Sector base multiples</h2>
-            <div class="table-wrap">
-              <table id="sectors-table" class="data-table sectors-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Sector</th>
-                    <th class="col-num" scope="col">Tokens</th>
-                    <th class="col-num" scope="col">Median mcap÷TVL</th>
-                    <th class="col-num" scope="col">Base used</th>
-                  </tr>
-                </thead>
-                <tbody id="sectors-body"></tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="comps-panel">
-            <h2>Valuation comps</h2>
-            <div class="table-wrap">
-              <table id="comps-table" class="data-table comps-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Protocol</th>
-                    <th scope="col">Sector</th>
-                    <th class="col-num" scope="col">TVL</th>
-                    <th class="col-num" scope="col">Market cap</th>
-                    <th class="col-num" scope="col">mcap÷TVL</th>
-                  </tr>
-                </thead>
-                <tbody id="comps-body"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <aside id="detail-drawer" class="detail-drawer" tabindex="-1" aria-label="Protocol detail" hidden></aside>
-
-    <footer class="sheet-footer">
-      <p>Frozen DefiLlama snapshot. "Records no token" means DefiLlama lists none, not that none exists. Implied values are this model's claims, not price predictions; farm plans are research notes, not financial advice.</p>
-    </footer>
-  </div>
-
-  <script src="z-data.js"></script>
-  <script src="ui.js"></script>
+  <footer class="sheet-footer">
+    <p>Frozen DefiLlama snapshot. "Records no token" reflects DefiLlama's record, not proof none exists. Implied values are conditional model claims fitted from snapshot comps; peer odds are descriptive base rates, not launch-date predictions; farm verdicts are illustrative, not financial advice.</p>
+  </footer>
+</div>
+<script src="../data.js"></script>
+<script src="z-summary.js"></script>
+<script src="ui.js"></script>
 </body>
 </html>
